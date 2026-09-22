@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+project_id = "my-project-id"
+region     = "us-central1"
+
+name_prefix = "alloydb-sec"
+subnet_cidr = "10.40.0.0/24"
+cpu_count   = 4
+
+# Break-glass credential only. Normal access uses IAM database auth.
+#   export TF_VAR_initial_user_password="$(openssl rand -base64 32)"
+initial_user_password = "CHANGE_ME_use_a_generated_password"
+
+# HSM gives FIPS 140-2 Level 3 key custody. SOFTWARE is cheaper.
+kms_protection_level = "HSM"
+key_rotation_period  = "7776000s" # 90 days
+
+# Project NUMBERS (not IDs) allowed to create a PSC endpoint.
+# Empty means this project only, which is the least-privilege default.
+# psc_allowed_consumer_projects = ["123456789012"]
+
+create_psc_dns = true
+
+# Audit classes. Measure log volume before moving to "all".
+pgaudit_log_classes = "ddl,role,write"
+
+# Send audit logs to a SEPARATE security project so that compromise of this
+# project cannot destroy the evidence.
+# audit_sink_destination = "pubsub.googleapis.com/projects/my-security-project/topics/gcp-audit"

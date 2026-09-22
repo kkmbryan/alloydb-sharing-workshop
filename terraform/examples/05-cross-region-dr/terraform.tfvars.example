@@ -1,0 +1,19 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+project_id = "my-project-id"
+
+primary_region   = "us-central1"
+secondary_region = "us-east4"
+
+name_prefix           = "alloydb-dr"
+primary_subnet_cidr   = "10.50.0.0/24"
+secondary_subnet_cidr = "10.51.0.0/24"
+
+# Applied to BOTH clusters. Keep them matched - an undersized secondary
+# increases RPO and leaves you short of capacity after a failover.
+# Each REGIONAL cluster consumes 2x this in its own region's quota.
+cpu_count = 4
+
+# This threshold IS your RPO under an unplanned failover.
+dr_replication_lag_ms_threshold = 60000
+
+initial_user_password = "CHANGE_ME_use_a_generated_password"

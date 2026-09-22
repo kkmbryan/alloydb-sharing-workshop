@@ -1,0 +1,29 @@
+name: terraform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.0
+          terraform_wrapper: false
+
+      # No Google Cloud credentials are configured on purpose.
+      # validate.sh runs `terraform init -backend=false` + `terraform validate`,
+      # which type-check against the provider schema without authenticating or
+      # creating any resources.
+      - name: Validate
+        run: ./scripts/validate.sh

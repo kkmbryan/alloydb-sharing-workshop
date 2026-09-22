@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+project_id = "my-project-id"
+region     = "us-central1"
+
+name_prefix = "alloydb-wk"
+subnet_cidr = "10.30.0.0/24"
+
+primary_cpu_count = 4
+
+# Read pool nodes. app + analytics must total <= 20 per cluster.
+app_pool_nodes       = 2
+analytics_pool_nodes = 1
+analytics_cpu_count  = 8
+
+# Set from the staleness your application can tolerate.
+replication_lag_ms_threshold = 10000
+
+initial_user_password = "CHANGE_ME_use_a_generated_password"

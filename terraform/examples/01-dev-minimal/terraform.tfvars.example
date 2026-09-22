@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+project_id = "my-project-id"
+region     = "us-central1"
+
+name_prefix = "alloydb-wk"
+subnet_cidr = "10.10.0.0/24"
+
+# Prefer supplying this out of band instead of writing it to a file:
+#   export TF_VAR_initial_user_password="$(openssl rand -base64 24)"
+initial_user_password = "CHANGE_ME_use_a_generated_password"

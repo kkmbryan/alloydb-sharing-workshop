@@ -1,0 +1,25 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+project_id = "my-project-id"
+region     = "us-central1"
+
+name_prefix       = "alloydb-wk"
+subnet_cidr       = "10.20.0.0/24"
+psa_range_address = "10.100.0.0"
+
+# A REGIONAL primary consumes 2x this in vCPU quota (active + standby).
+cpu_count = 8
+
+#   export TF_VAR_initial_user_password="$(openssl rand -base64 24)"
+initial_user_password = "CHANGE_ME_use_a_generated_password"
+
+# Set true only once every client can use the Auth Proxy or a language
+# connector. This blocks plain psql.
+require_connectors = false
+
+# When set, this SA is granted least-privilege AlloyDB roles and registered
+# as an IAM database user, so the app needs no database password.
+# app_service_account_email = "my-app@my-project-id.iam.gserviceaccount.com"
+
+enable_data_access_logs = true
+
+# alert_email = "db-oncall@example.com"

@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# Terraform
+# ---------------------------------------------------------------------------
+**/.terraform/*
+.terraform.lock.hcl.bak
+
+# State files MUST never be committed - they contain plaintext secrets
+# (e.g. AlloyDB initial_user password) and infrastructure inventory.
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+
+# Variable files frequently contain project IDs, CIDRs and secrets.
+# Commit only *.tfvars.example - never the real thing.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+!*.auto.tfvars.example
+
+# CLI config / plan output
+.terraformrc
+terraform.rc
+*.tfplan
+*.tfplan.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ---------------------------------------------------------------------------
+# Credentials & secrets - defence in depth, these should never exist locally
+# ---------------------------------------------------------------------------
+*.json.key
+*-sa-key.json
+service-account*.json
+application_default_credentials.json
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# Python / tooling scratch
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.tflint.d/
