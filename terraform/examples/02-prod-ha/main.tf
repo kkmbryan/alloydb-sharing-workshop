@@ -17,6 +17,11 @@
 # quota, before any read pools. Check the `vcpu_quota_consumed` output.
 # ===========================================================================
 
+# PSC allow-lists consumer PROJECT NUMBERS, not project IDs.
+data "google_project" "this" {
+  project_id = var.project_id
+}
+
 module "network" {
   source = "../../modules/network"
 
@@ -24,12 +29,15 @@ module "network" {
   region      = var.region
   name_prefix = var.name_prefix
   subnet_cidr = var.subnet_cidr
-  enable_psa  = true
 
-  # Production ranges should be pinned, not auto-allocated, so they can be
-  # documented in IPAM and will not move between applies.
-  psa_range_address       = var.psa_range_address
-  psa_range_prefix_length = 16
+  # Private Service Connect, not Private Services Access. No VPC peering, no
+  # /16 handed to Google's producer network, and no transitive reachability
+  # from peered VPCs - which is usually the deciding argument in a security
+  # review. See terraform/examples/README.md.
+  enable_psa = false
+
+  # Lets the Auth Proxy reach googleapis.com from hosts with no public IP.
+  enable_private_google_access = true
 }
 
 module "alloydb" {
@@ -39,8 +47,17 @@ module "alloydb" {
   region     = var.region
   cluster_id = "${var.name_prefix}-prod"
 
-  network_self_link  = module.network.network_self_link
-  allocated_ip_range = module.network.psa_range_name
+  # --- Networking (PSC) ---
+  # The cluster is not attached to your VPC. It publishes a service attachment
+  # and you create an endpoint pointing at it, further down this file.
+  #
+  # PSA and PSC are mutually exclusive and cannot be changed after the cluster
+  # is created. Moving between them means a new cluster and a data migration,
+  # so this is worth getting right the first time.
+  psc_enabled = true
+  psc_allowed_consumer_projects = length(var.psc_allowed_consumer_projects) > 0 ? (
+    var.psc_allowed_consumer_projects
+  ) : [data.google_project.this.number]
 
   # --- Compute ---
   cpu_count = var.cpu_count
@@ -150,6 +167,45 @@ module "alloydb" {
   }
 
   depends_on = [module.network]
+}
+
+# ---------------------------------------------------------------------------
+# Consumer-side PSC endpoint
+#
+# With PSA, Google places a private IP inside your VPC for you. With PSC you
+# create the endpoint yourself: an internal address plus a forwarding rule
+# that targets the cluster's service attachment. That extra step is the price
+# of not peering your VPC to Google's producer network.
+#
+# The endpoint is REGIONAL. A multi-region deployment needs one per region -
+# see 05-cross-region-dr.
+# ---------------------------------------------------------------------------
+module "psc_endpoint" {
+  source = "../../modules/psc-endpoint"
+
+  project_id = var.project_id
+  region     = var.region
+  name       = "${var.name_prefix}-prod-psc"
+
+  network_self_link = module.network.network_self_link
+  subnet_self_link  = module.network.subnet_self_link
+
+  service_attachment_link = module.alloydb.psc_service_attachment_link
+
+  # Pin the endpoint IP in production so firewall rules, IPAM records and
+  # runbooks can reference a stable address.
+  ip_address = var.psc_endpoint_ip
+
+  # Off by default: most organisations manage DNS centrally. If you leave it
+  # off, create the A record from the psc_endpoint_summary output. Nothing
+  # resolves until you do.
+  create_dns = var.create_psc_dns
+  dns_name   = module.alloydb.psc_dns_name
+
+  labels = {
+    env        = "prod"
+    managed_by = "terraform"
+  }
 }
 
 # ---------------------------------------------------------------------------

@@ -27,20 +27,23 @@ review where the blast-radius boundaries in your data tier actually are. Read
 | Resource | Terraform address | Purpose |
 | --- | --- | --- |
 | VPC | `module.network.google_compute_network.this` | Custom-mode VPC `<prefix>-vpc`. |
-| Subnet | `module.network.google_compute_subnetwork.app` | `<prefix>-<region>-app` (default `10.30.0.0/24`), Private Google Access on. |
-| Reserved PSA range | `module.network.google_compute_global_address.psa_range` | Auto-allocated `/16` for Private Services Access. |
-| Service networking connection | `module.network.google_service_networking_connection.psa` | The VPC peering that makes PSA work. |
+| Subnet | `module.network.google_compute_subnetwork.app` | `<prefix>-<region>-app` (default `10.30.0.0/24`), Private Google Access on. Hosts client workloads and all PSC endpoints. |
 | Firewall: allow Postgres | `module.network.google_compute_firewall.allow_postgres_internal` | TCP 5432 + 6432 within the subnet. |
 | Firewall: logged deny-all | `module.network.google_compute_firewall.deny_all_ingress_logged` | Priority 65534 explicit logged deny. |
-| AlloyDB cluster | `module.alloydb.google_alloydb_cluster.this` | `<prefix>-readscale`. Owns the shared regional storage all three instances read. |
-| Primary instance | `module.alloydb.google_alloydb_instance.primary` | `<prefix>-readscale-primary`. `REGIONAL`, `primary_cpu_count` vCPU (default 4). All writes go here. |
-| App read pool | `module.alloydb.google_alloydb_instance.read_pool["<prefix>-readscale-app"]` | Default 2 nodes × 4 vCPU. `statement_timeout = 30s`. Latency-sensitive traffic. |
-| Analytics read pool | `module.alloydb.google_alloydb_instance.read_pool["<prefix>-readscale-analytics"]` | Default 1 node × 8 vCPU. `statement_timeout = 30min`, `work_mem = 256 MB`, columnar engine on. |
+| Project lookup | `data.google_project.this` | Supplies this project's number for the PSC consumer allow-list. |
+| AlloyDB cluster | `module.alloydb.google_alloydb_cluster.this` | `<prefix>-readscale`. `psc_enabled = true`. Owns shared regional storage. |
+| Primary instance | `module.alloydb.google_alloydb_instance.primary` | `<prefix>-readscale-primary`. `REGIONAL`, `primary_cpu_count` vCPU (default 4). All writes go here. Publishes its own service attachment. |
+| App read pool | `module.alloydb.google_alloydb_instance.read_pool["<prefix>-readscale-app"]` | Default 2 nodes × 4 vCPU. `statement_timeout = 30s`. Publishes its own service attachment. |
+| Analytics read pool | `module.alloydb.google_alloydb_instance.read_pool["<prefix>-readscale-analytics"]` | Default 1 node × 8 vCPU. `statement_timeout = 30min`, `work_mem = 256 MB`, columnar engine on. Publishes its own service attachment. |
+| PSC endpoint: primary | `module.psc_endpoint_primary` | Reserved internal IP plus forwarding rule for writes to the primary. |
+| PSC endpoints: read pools | `module.psc_endpoint_read_pool` (for_each) | Dedicated endpoint per read pool instance in your subnet. |
+| Private DNS zones & records | `module.psc_endpoint_*.google_dns_*` | *Conditional on `create_psc_dns` (default `false`).* One per instance. |
 | Alert policies ×8 | `module.observability` | CPU, connection utilisation, memory, transaction-ID utilisation, storage quota, **replication lag**, node down, backup staleness. |
 | Dashboard | `module.observability.google_monitoring_dashboard.alloydb` | Bundled Cloud Monitoring overview. |
 
-Outputs: `cluster_name`, `primary_ip_address`, `read_pool_ip_addresses`,
-`read_pool_nodes_used`, `vcpu_quota_consumed`, `routing_guidance`.
+Outputs: `cluster_name`, `primary_psc_endpoint_ip`, `read_pool_psc_endpoint_ips`,
+`psc_dns_records_required`, `read_pool_nodes_used`, `vcpu_quota_consumed`,
+`routing_guidance`.
 
 `main.tf` also contains a Terraform `check` block named `read_pool_node_budget`
 which asserts `app_pool_nodes + analytics_pool_nodes <= 20`, so you fail at plan time
@@ -52,27 +55,35 @@ rather than discovering the ceiling during a 20-minute apply.
 
 ```mermaid
 flowchart TB
-  subgraph vpc["Your VPC (prefix-vpc)"]
+  subgraph vpc["Your VPC (prefix-vpc) - no peering to Google"]
     writer["Application<br/>write path"]
     reader["Application<br/>read path"]
     bi["BI / reporting tools<br/>exports, dashboards"]
+
+    ep_primary["Primary PSC endpoint<br/>module.psc_endpoint_primary"]
+    ep_app["App pool PSC endpoint<br/>module.psc_endpoint_read_pool['app']"]
+    ep_ana["Analytics pool PSC endpoint<br/>module.psc_endpoint_read_pool['analytics']"]
+
+    writer --> ep_primary
+    reader --> ep_app
+    bi --> ep_ana
   end
 
-  subgraph cluster["AlloyDB cluster prefix-readscale"]
+  subgraph cluster["AlloyDB cluster prefix-readscale (PSC enabled)"]
     storage[("Shared regional storage<br/>disaggregated - ONE copy of the data")]
 
-    primary["Primary instance (REGIONAL)<br/>4 vCPU active + 4 vCPU standby<br/>statement_timeout inherited"]
-    apppool["App read pool<br/>2 nodes x 4 vCPU<br/>statement_timeout 30s"]
-    anapool["Analytics read pool<br/>1 node x 8 vCPU<br/>statement_timeout 30min<br/>work_mem 256MB, columnar engine ON"]
+    primary["Primary instance (REGIONAL)<br/>4 vCPU active + 4 vCPU standby<br/>service attachment: primary"]
+    apppool["App read pool<br/>2 nodes x 4 vCPU<br/>statement_timeout 30s<br/>service attachment: app"]
+    anapool["Analytics read pool<br/>1 node x 8 vCPU<br/>statement_timeout 30min<br/>service attachment: analytics"]
 
     primary --- storage
     apppool --- storage
     anapool --- storage
   end
 
-  writer -->|"writes + read-your-writes"| primary
-  reader -->|"one stable endpoint,<br/>load balanced across nodes"| apppool
-  bi -->|"long scans, isolated"| anapool
+  ep_primary -->|"PSC"| primary
+  ep_app -->|"PSC load-balanced across 2 nodes"| apppool
+  ep_ana -->|"PSC"| anapool
 
   lag["Replication lag alert<br/>instance/postgres/replication/maximum_lag"]
   apppool -.-> lag
@@ -88,11 +99,13 @@ flowchart TB
 ```bash
 gcloud services enable \
   alloydb.googleapis.com \
-  servicenetworking.googleapis.com \
   compute.googleapis.com \
   monitoring.googleapis.com \
+  dns.googleapis.com \
   --project=YOUR_PROJECT_ID
 ```
+
+*(Note: `dns.googleapis.com` is only required if `create_psc_dns = true`.)*
 
 ### IAM for whoever runs Terraform
 
@@ -102,8 +115,8 @@ not a Google-published list.
 | Role | Needed for |
 | --- | --- |
 | `roles/alloydb.admin` | Cluster, primary instance, both read pool instances |
-| `roles/compute.networkAdmin` | VPC, subnet, global address, firewall rules |
-| `roles/servicenetworking.networksAdmin` | The PSA peering |
+| `roles/compute.networkAdmin` | VPC, subnet, PSC forwarding rules and addresses, firewall rules |
+| `roles/dns.admin` | *Conditional on `create_psc_dns`.* Private DNS zones and records |
 | `roles/monitoring.editor` | Alert policies and the dashboard |
 
 ### Quota to check first
@@ -278,13 +291,22 @@ you set `max_connections` on the primary and forget the pools, the merge covers 
 you set a *lower* value on a pool, the API rejects it. Note also that `max_connections`
 **does** require an instance restart, unlike most of the flags used here.
 
-### Why there is one endpoint per pool, not one per node
+### Why there is one endpoint per pool, and what PSC changes
 
-Each read pool instance exposes a **single stable IP** that load balances across its
+Each read pool instance exposes a **single stable endpoint** that load balances across its
 nodes. Scaling `node_count` from 2 to 6 does not change the connection string and does not
 require an application deploy. This is why read pool scaling is an operational action
-rather than a release. `terraform output read_pool_ip_addresses` gives you the map of
-instance ID to IP.
+rather than a release.
+
+However, on Private Service Connect, **reachability is per-instance**. The primary and each
+read pool each publish their own service attachment. That gives you two key architectural realities:
+
+1. **Security isolation:** You can allow-list consumer projects per instance. For example, an analytics consumer project can be granted access only to the analytics read pool's service attachment, leaving the primary completely unreachable to it.
+2. **Operational overhead:** Adding a read pool is not just provisioning compute; it requires creating a consumer-side PSC endpoint (internal IP + forwarding rule) and a DNS record for the advertised hostname. `terraform output read_pool_psc_endpoint_ips` and `terraform output psc_dns_records_required` provide the addresses and hostnames.
+
+### If your organisation uses PSA
+
+Private Services Access remains fully supported. With PSA, Google allocates private IP addresses inside your VPC for the primary and read pools automatically, with no consumer endpoints to manage. To use PSA, set `enable_psa = true` on `module.network` and pass `network_self_link` plus `allocated_ip_range` to `module.alloydb`. Note that the choice between PSA and PSC is permanent at cluster creation.
 
 ### Why replication lag is the alert that matters here
 
@@ -410,7 +432,9 @@ gcloud alpha monitoring policies list --project="$PROJECT" \
   --format='table(displayName,enabled)'
 
 # 7. Endpoints the application should use.
-terraform output read_pool_ip_addresses
+terraform output primary_psc_endpoint_ip
+terraform output read_pool_psc_endpoint_ips
+terraform output psc_dns_records_required
 terraform output routing_guidance
 ```
 
@@ -456,11 +480,10 @@ terraform apply -var='analytics_pool_nodes=0'
 ```
 
 > [!TIP]
-> The `google_service_networking_connection` uses `deletion_policy = "ABANDON"`, so the
-> PSA peering to `servicenetworking` is deliberately left behind. Deleting a service
-> networking connection is the classic way a database stack's destroy hangs, because the
-> producer side still holds resources. The leftover peering is harmless and is reused on
-> the next apply.
+> On the PSC path, there is no service networking VPC peering to leave behind. The forwarding
+> rules and reserved addresses for all endpoints are destroyed cleanly with the rest of the
+> stack. If you created DNS records in a central corporate DNS system (with `create_psc_dns = false`),
+> remember to clean up those records manually.
 
 Confirm the quota has been released:
 
@@ -487,7 +510,7 @@ Related configuration:
 
 Next examples:
 
-- **[`04-secure-cmek-psc`](../04-secure-cmek-psc/README.md)** — the hardened posture:
+- **[`04-secure-cmek`](../04-secure-cmek/README.md)** — the hardened posture:
   Private Service Connect, CMEK, `require_connectors`, and an audit export sink.
 - **[`05-cross-region-dr`](../05-cross-region-dr/README.md)** — read pools do **not**
   survive a failover and are not a DR mechanism. That example covers what is.

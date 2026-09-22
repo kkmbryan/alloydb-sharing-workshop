@@ -63,8 +63,38 @@ output "read_pool_instance_names" {
 }
 
 output "read_pool_ip_addresses" {
-  description = "Map of read pool instance_id to private IP. Point read-only traffic here."
+  description = <<-EOT
+    Map of read pool instance_id to private IP. Point read-only traffic here.
+
+    Empty strings on the PSC path: a PSC instance has no IP inside your VPC.
+    Use read_pool_psc_service_attachment_links instead.
+  EOT
   value       = { for k, v in google_alloydb_instance.read_pool : k => v.ip_address }
+}
+
+output "read_pool_psc_service_attachment_links" {
+  description = <<-EOT
+    PSC path only. Map of read pool instance_id to its service attachment.
+
+    Each read pool publishes its OWN attachment, so each one needs its own
+    consumer endpoint. Nothing routes read traffic for you - see
+    terraform/examples/03-read-pool-scaling.
+  EOT
+  value = {
+    for k, v in google_alloydb_instance.read_pool :
+    k => try(v.psc_instance_config[0].service_attachment_link, null)
+  }
+}
+
+output "read_pool_psc_dns_names" {
+  description = <<-EOT
+    PSC path only. Map of read pool instance_id to the hostname AlloyDB
+    advertises for it. Each must resolve to that pool's endpoint IP.
+  EOT
+  value = {
+    for k, v in google_alloydb_instance.read_pool :
+    k => try(v.psc_instance_config[0].psc_dns_name, null)
+  }
 }
 
 output "read_pool_total_nodes" {

@@ -62,6 +62,22 @@ A worked example lives in
 > underscores: `pool_mode`. Getting this wrong produces a confusing API error
 > rather than a helpful validation message.
 
+### Does enabling it restart the database?
+
+No. This is usually the first question in a change-approval conversation, so
+it is worth having the precise answer to hand.
+
+Enabling managed connection pooling on an instance created **before November
+2024** triggers a one-time update to the instance's network settings. That
+causes a brief interruption to VPC network connectivity, typically under 15
+seconds. The database itself does not restart, and public IP connectivity is
+unaffected.
+
+Instances created after that point need no network update at all.
+
+In either case you are looking at a short connectivity blip rather than a
+restart, which usually makes this a low-risk change to schedule.
+
 ---
 
 ## Connecting
@@ -74,11 +90,54 @@ connection pooling listens on **6432**; direct connections continue to use
 psql "postgresql://USERNAME:PASSWORD@IP_ADDRESS:6432/postgres"
 ```
 
-Any user on the AlloyDB instance can connect through the pooler. It also works
-with the **AlloyDB Auth Proxy** and the **AlloyDB Language Connectors** — worth
-stating explicitly, because several third-party write-ups claim otherwise. When
-the Auth Proxy is in use, its connections are pooled separately, in a pool
-containing only Auth Proxy connections.
+On the Private Service Connect path, `IP_ADDRESS` is your PSC endpoint's
+address. Pooling works over PSC and over private services access alike; it is
+**not** supported on public IP, which is a point worth making in a security
+review — enabling the pooler reinforces a private-only posture rather than
+working against it.
+
+Any user on the AlloyDB instance can connect through the pooler.
+
+### Does pooling still apply behind the Auth Proxy or a language connector?
+
+Yes, and you do not have to do anything to arrange it. This comes up often
+enough to deserve a direct answer.
+
+| How the application connects | What changes when you enable pooling |
+|---|---|
+| Direct `psql` or a plain driver | Change the port from 5432 to 6432 |
+| AlloyDB Auth Proxy | Nothing. The application keeps pointing at the proxy's local port |
+| AlloyDB Language Connectors (Java, Go, Python, Node.js) | Nothing |
+
+Behind the Auth Proxy the service pools the proxy's connections in a
+**separate pool**, containing only Auth Proxy connections. So an instance with
+both kinds of client in front of it runs two pools, not one. That matters when
+you read the statistics: each pool reports its own numbers, and the
+`pooler` label on the metrics is how you tell them apart.
+
+There are correspondingly two statistics databases:
+
+| Database | Reachable from |
+|---|---|
+| `alloydb_mcp_stats_<POOLER_ID>` (IDs start at 1) | Standard connections on port 6432 |
+| `alloydb_mcp_stats_authproxy_pooler1` | Only through the AlloyDB Auth Proxy |
+
+The proxy's `--port` flag sets the **local** port it listens on, not the
+upstream port it dials, so there is no flag to "select the pooler". On PSC,
+remember the proxy also needs `--psc`, and it resolves the AlloyDB-advertised
+hostname rather than the endpoint IP — so the DNS record has to exist first.
+
+```bash
+./alloydb-auth-proxy --psc \
+  projects/PROJECT/locations/REGION/clusters/CLUSTER/instances/INSTANCE
+```
+
+One practical consequence: because clients behind the proxy need no change,
+a rollout can be staged. Enable pooling, watch the Auth Proxy pool's metrics
+settle, and move direct clients from 5432 to 6432 at your own pace.
+
+The language connectors select private connectivity by default; set
+`alloydbIpType` to `PSC` when the instance is on a PSC endpoint.
 
 ---
 
@@ -175,8 +234,17 @@ means clients are queuing for server connections, which indicates
 server connections too long, which is a query problem rather than a pool
 problem. Check both before increasing the pool size.
 
+The `pooler` label is worth grouping by rather than aggregating away. If any
+of your clients come through the Auth Proxy, their connections sit in a
+separate pool, and an aggregate figure will average a saturated pool together
+with an idle one.
+
 If you set `stats_users`, those users can additionally reach a statistics
-console backed by an `alloydb_mcp_stats_{pooler_id}` database per pooler.
+console, which speaks the PgBouncer admin dialect: `SHOW STATS;`,
+`SHOW POOLS;`, `SHOW CLIENTS;`. No users are authorised by default. There is
+one statistics database per pooler — see
+[the two stats databases](#does-pooling-still-apply-behind-the-auth-proxy-or-a-language-connector)
+above, and note the Auth Proxy's can only be reached through the Auth Proxy.
 
 ---
 

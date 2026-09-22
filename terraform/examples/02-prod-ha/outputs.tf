@@ -8,9 +8,29 @@ output "primary_instance_name" {
   value       = module.alloydb.primary_instance_name
 }
 
-output "primary_ip_address" {
-  description = "Private IP of the primary instance."
-  value       = module.alloydb.primary_ip_address
+output "psc_endpoint_ip" {
+  description = <<-EOT
+    Internal IP of the PSC endpoint. This is the address clients connect to.
+
+    On the PSC path the instance has no IP inside your VPC - the endpoint you
+    created does.
+  EOT
+  value       = module.psc_endpoint.ip_address
+}
+
+output "psc_dns_name" {
+  description = "Hostname AlloyDB advertises for this instance. Must resolve to psc_endpoint_ip."
+  value       = module.alloydb.psc_dns_name
+}
+
+output "psc_service_attachment" {
+  description = "Service attachment the endpoint targets. Needed to add endpoints in other projects."
+  value       = module.alloydb.psc_service_attachment_link
+}
+
+output "psc_endpoint_summary" {
+  description = "Endpoint details and the connection commands that go with them."
+  value       = module.psc_endpoint.connect_summary
 }
 
 output "vcpu_quota_consumed" {
@@ -35,15 +55,26 @@ output "connection_notes" {
   description = "How to connect, and which port does what."
   value       = <<-EOT
 
+    Endpoint IP:                       ${module.psc_endpoint.ip_address}
     Direct (bypasses the pooler):      port 5432
     Managed Connection Pooling:        port 6432   <- use this from the app
 
-    Via the Auth Proxy:
-      ./alloydb-auth-proxy ${module.alloydb.primary_instance_name}
+    Before anything resolves, the PSC hostname needs an A record. If you set
+    create_psc_dns = false, create it wherever your DNS is managed:
+
+      ${coalesce(module.alloydb.psc_dns_name, "(pending apply)")}  A  ${module.psc_endpoint.ip_address}
+
+    Via the Auth Proxy. The --psc flag tells it to use the PSC endpoint, and it
+    resolves the hostname above rather than the IP:
+      ./alloydb-auth-proxy --psc ${module.alloydb.primary_instance_name}
       psql -h 127.0.0.1 -U postgres -d postgres
 
     With IAM database authentication (no password):
-      ./alloydb-auth-proxy --auto-iam-authn ${module.alloydb.primary_instance_name}
+      ./alloydb-auth-proxy --psc --auto-iam-authn ${module.alloydb.primary_instance_name}
+
+    The Auth Proxy works with managed connection pooling without any change on
+    your side: the service pools the proxy's connections separately, so
+    applications behind the proxy keep pointing at the proxy's local port.
 
     Reminder: the pooler runs in transaction mode. Session-scoped state,
     session advisory locks, LISTEN/NOTIFY, WITH HOLD cursors and temp tables

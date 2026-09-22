@@ -89,14 +89,19 @@ variable "psc_allowed_consumer_projects" {
 
 variable "create_psc_dns" {
   description = <<-EOT
-    Create the private Cloud DNS zone and A record mapping the AlloyDB PSC
-    hostname to the endpoint IP.
+    Whether to create the private Cloud DNS zone and A record mapping the
+    AlloyDB PSC hostname to the endpoint IP.
 
-    Set false if you manage DNS centrally elsewhere - but something must
-    create this record, or the connectors cannot resolve the instance.
+    Defaults to false because most organisations manage DNS centrally and
+    would rather this configuration did not create zones underneath them.
+
+    Something still has to create that record. The Auth Proxy and the language
+    connectors resolve the hostname rather than the IP, so until it exists they
+    cannot connect. The psc_endpoint_summary output tells you which name to
+    point at which address.
   EOT
   type        = bool
-  default     = true
+  default     = false
 }
 
 # ---------------------------------------------------------------------------

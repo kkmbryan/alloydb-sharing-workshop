@@ -1,17 +1,20 @@
-# 04 — Hardened: CMEK + Private Service Connect + IAM Auth + Full Audit
+# 04 — Hardened: CMEK, IAM Auth and Full Audit
 
 ## Purpose
 
 This is the maximum-assurance reference deployment, and it exists to satisfy a security
-review rather than to be the cheapest or simplest way to run AlloyDB. It combines
-**Private Service Connect** instead of VPC peering (so there is no transitive routing
-exposure and consumer projects are allow-listed one at a time), **customer-managed
-encryption keys** on both the cluster and its backups with automatic rotation,
-**`require_connectors = true`** so a stolen password alone cannot open a connection,
-**IAM database authentication** including group authentication, **pgAudit with parameter
-logging** exported to a sink in a separate security project, restricted reads on the
-password-hash catalogs, a 35-day point-in-time recovery window, and alerting on the audit
-pipeline itself. Use it when the data class is confidential or regulated. Read
+review rather than to be the cheapest or simplest way to run AlloyDB. Every example in
+this repo runs on **Private Service Connect**, so private connectivity is the shared
+baseline here rather than the thing that makes this example different. What distinguishes
+it is the hardened posture layered on top: **customer-managed encryption keys** on both
+the cluster and its backups with automatic rotation, **`require_connectors = true`** so a
+stolen password alone cannot open a connection, **IAM database authentication** including
+group authentication, **pgAudit with parameter logging** exported to a sink in a separate
+security project, restricted reads on the password-hash catalogs, a 35-day point-in-time
+recovery window, and alerting on the audit pipeline itself. PSC still earns its place in
+the control set — consumer projects are allow-listed one at a time, which is a grant a
+security team can review — but it is table stakes rather than the headline. Use this
+example when the data class is confidential or regulated. Read
 [`02-prod-ha`](../02-prod-ha/README.md) first — this example assumes you already
 understand that baseline.
 
@@ -38,23 +41,25 @@ understand that baseline.
 | Firewall: logged deny-all | `module.network.google_compute_firewall.deny_all_ingress_logged` | Priority 65534 explicit deny, logged. The implicit deny at 65535 cannot log. |
 | AlloyDB cluster | `module.alloydb.google_alloydb_cluster.this` | `<prefix>-secure`. PSC mode, CMEK on cluster and backups, 35-day PITR, 60 retained backups, Sunday 04:00 maintenance, deletion protection on. |
 | Primary instance | `module.alloydb.google_alloydb_instance.primary` | `<prefix>-secure-primary`. `REGIONAL`, `cpu_count` vCPU (default 4), `ENCRYPTED_ONLY`, `require_connectors = true`, no public IP, hardened flag set. |
-| PSC endpoint IP | `google_compute_address.psc_endpoint` | Internal IP reserved in your subnet. |
-| PSC forwarding rule | `google_compute_forwarding_rule.psc_endpoint` | The consumer-side endpoint targeting AlloyDB's service attachment. `load_balancing_scheme = ""`. |
-| Private DNS zone | `google_dns_managed_zone.alloydb_psc` | *Conditional on `create_psc_dns` (default `true`).* Private zone covering the AlloyDB PSC domain, visible to this VPC. |
-| DNS A record | `google_dns_record_set.alloydb_psc` | Maps the advertised `psc_dns_name` to the endpoint IP. Without this the connectors cannot resolve the instance. |
+| PSC endpoint IP | `module.psc_endpoint.google_compute_address.psc` | `<prefix>-alloydb-psc-ep`. An internal IP reserved in your subnet, held as its own resource so it survives a forwarding-rule replacement. |
+| PSC forwarding rule | `module.psc_endpoint.google_compute_forwarding_rule.psc` | The consumer-side endpoint targeting AlloyDB's service attachment. The `load_balancing_scheme = ""` requirement is documented in the module. |
+| Private DNS zone | `module.psc_endpoint.google_dns_managed_zone.psc` | *Conditional on `create_psc_dns` (default `false`).* Private zone covering the AlloyDB PSC domain, visible to this VPC. |
+| DNS A record | `module.psc_endpoint.google_dns_record_set.psc` | *Same condition.* Maps the advertised `psc_dns_name` to the endpoint IP. Until this record exists somewhere, the connectors cannot resolve the instance. |
 | Audit config | `google_project_iam_audit_config.alloydb` | Enables `ADMIN_READ`, `DATA_READ`, `DATA_WRITE` for `alloydb.googleapis.com`. Unconditional here. |
 | Log sink | `google_logging_project_sink.alloydb_audit` | *Conditional on `audit_sink_destination`.* Exports AlloyDB audit logs out of this project, with a dedicated writer identity. |
 | Alert policies ×9 | `module.observability` | CPU, connections, memory, transaction-ID utilisation, storage quota, replication lag, node down, backup staleness, **audit backlog**. |
 | Dashboard | `module.observability.google_monitoring_dashboard.alloydb` | Bundled Cloud Monitoring overview. |
 
 Outputs: `cluster_name`, `kms_key_id`, `alloydb_service_agent`, `psc_endpoint_ip`,
-`psc_dns_name`, `psc_service_attachment`, `audit_sink_writer_identity`,
-`security_posture_summary`.
+`psc_dns_name`, `psc_service_attachment`, `psc_endpoint_summary`,
+`audit_sink_writer_identity`, `security_posture_summary`.
 
 > [!TIP]
 > `terraform output security_posture_summary` prints a formatted control inventory —
 > network, encryption, identity, audit, recovery — designed to be pasted directly into a
-> design review document.
+> design review document. `terraform output psc_endpoint_summary` prints the companion
+> connectivity detail: the endpoint IP, the hostname that has to resolve to it, whether
+> the record was created for you, and the connection commands that go with them.
 
 ---
 
@@ -65,9 +70,9 @@ flowchart TB
   subgraph consumer["Your VPC (prefix-vpc) - no peering to Google"]
     client["Client workload<br/>AlloyDB Auth Proxy or language connector<br/>IAM identity with roles/alloydb.client"]
     subnet["Subnet prefix-region-app 10.40.0.0/24<br/>Private Google Access ON"]
-    epip["Reserved internal IP<br/>google_compute_address"]
-    fr["PSC forwarding rule<br/>load_balancing_scheme = empty string"]
-    dns["Private Cloud DNS zone<br/>A record: psc_dns_name -> endpoint IP"]
+    epip["Reserved internal IP<br/>module.psc_endpoint"]
+    fr["PSC endpoint (forwarding rule)<br/>module.psc_endpoint"]
+    dns["A record: psc_dns_name -> endpoint IP<br/>created here only when create_psc_dns = true<br/>otherwise yours to create"]
     client --- subnet
     epip --- fr
   end
@@ -125,9 +130,10 @@ the API and the KMS grant needs that principal to exist.
 
 > [!NOTE]
 > `servicenetworking.googleapis.com` is listed for consistency with the other examples,
-> but this example runs in **PSC mode** with `enable_psa = false`, so it creates no
-> Private Services Access resources and does not depend on that API at apply time. Enable
-> it anyway if you may later add a PSA-mode cluster to the same project.
+> but every example in this repo runs in **PSC mode** with `enable_psa = false`, so none
+> of them create Private Services Access resources or depend on that API at apply time.
+> Enable it anyway if your organisation may later add a PSA-mode cluster to the same
+> project. `dns.googleapis.com` is only required when `create_psc_dns = true`.
 
 ### IAM for whoever runs Terraform
 
@@ -138,8 +144,8 @@ not a Google-published list.
 | --- | --- |
 | `roles/alloydb.admin` | Cluster and instance |
 | `roles/cloudkms.admin` | Key ring, crypto key, and the IAM binding on the key |
-| `roles/compute.networkAdmin` | VPC, subnet, firewall rules, PSC address and forwarding rule |
-| `roles/dns.admin` | Private managed zone and A record |
+| `roles/compute.networkAdmin` | VPC, subnet, firewall rules, and the PSC address and forwarding rule in `module.psc_endpoint` |
+| `roles/dns.admin` | Private managed zone and A record. Only needed when `create_psc_dns = true` |
 | `roles/resourcemanager.projectIamAdmin` | `google_project_iam_audit_config` |
 | `roles/logging.configWriter` | The export sink |
 | `roles/serviceusage.serviceUsageAdmin` | `google_project_service` and the service identity |
@@ -175,7 +181,7 @@ levels or locations are permitted.
 ## Usage
 
 ```bash
-cd terraform/examples/04-secure-cmek-psc
+cd terraform/examples/04-secure-cmek
 
 cp terraform.tfvars.example terraform.tfvars
 $EDITOR terraform.tfvars
@@ -183,6 +189,7 @@ $EDITOR terraform.tfvars
 #   kms_protection_level          HSM (default) or SOFTWARE
 #   key_rotation_period           default 7776000s = 90 days
 #   psc_allowed_consumer_projects project NUMBERS, empty = this project only
+#   create_psc_dns                default false - the A record is yours to create
 #   pgaudit_log_classes           default "ddl,role,write"
 #   audit_sink_destination        strongly recommended - a SEPARATE project
 
@@ -282,19 +289,20 @@ AlloyDB picks up new versions transparently — there is no re-encryption event 
 downtime. This is why `prevent_destroy` on the key is not optional: destroying a key
 version makes every byte encrypted under it unrecoverable, including backups.
 
-### Why Private Service Connect instead of Private Services Access
+### What Private Service Connect contributes to the security posture
 
-PSA and PSC are mutually exclusive, and **the choice cannot be changed after the cluster is
-created**. For a security-sensitive deployment PSC is the stronger position:
+Every example in this repo is on PSC, so this is not a choice this example makes on its
+own. It is still worth stating what the model buys a security review, because it is part
+of the control set you will be asked about.
 
-| | PSA (examples 01, 02, 03, 05) | PSC (this example) |
-| --- | --- | --- |
-| Connectivity | VPC peering to Google's producer network | A forwarding rule in *your* subnet |
-| IP address space | A `/16` of yours is handed to the producer network | Endpoint uses one IP from your existing subnet |
-| Transitive exposure | Peering brings routing considerations with it | None — PSC is a unidirectional attachment |
-| Access control | Network reachability | Explicit **allow-list of consumer project numbers** |
-| DNS | Google-managed | **Your responsibility** |
-| Operational cost | Low | Higher — you own the endpoint and the DNS record |
+| | What PSC gives you |
+| --- | --- |
+| Connectivity | A forwarding rule in *your* subnet, not a peering to Google's producer network |
+| IP address space | The endpoint takes one IP from your existing subnet; no range is handed to the producer side |
+| Transitive exposure | None to reason about — PSC is a unidirectional attachment |
+| Access control | An explicit **allow-list of consumer project numbers**, per instance |
+| DNS | Yours to manage |
+| Operational cost | Higher than PSA — you own the endpoint and the DNS record |
 
 The allow-list is the control a security team will care about most. Each entry in
 `psc_allowed_consumer_projects` is a grant of network reachability to the database, made
@@ -302,23 +310,47 @@ explicitly and reviewably. The default here is `[data.google_project.this.number
 project only, the least-privilege choice. Note it takes project **numbers**, not project
 IDs; supplying IDs produces an obscure failure.
 
+> [!NOTE]
+> If your organisation is on Private Services Access, it remains fully supported and
+> nothing here argues otherwise; these examples simply standardise on PSC. The PSA path is
+> `enable_psa = true` on the `network` module, then `network_self_link` plus
+> `allocated_ip_range` on the `alloydb-cluster` module in place of `psc_enabled`. The two
+> models are mutually exclusive and **the choice cannot be changed after the cluster is
+> created**, so settle it before the first apply.
+
 ### Why you must create the PSC endpoint *and* the DNS record
 
 This is the part people miss when moving from PSA. With PSA, Google gives you an IP and it
-just resolves. With PSC you are the consumer and you own three things:
+just resolves. With PSC you are the consumer, and the consumer side is yours: an internal
+address, a forwarding rule that targets AlloyDB's service attachment, and a DNS record
+that makes the advertised hostname resolve to it.
 
-1. `google_compute_address` — an internal IP reserved in your subnet.
-2. `google_compute_forwarding_rule` — targets AlloyDB's `service_attachment_link`. Note
-   `load_balancing_scheme = ""`: the empty string is **required** for a PSC endpoint, and
-   any real load balancing scheme value is rejected.
-3. A DNS A record mapping the `psc_dns_name` AlloyDB advertises (e.g.
-   `<uid>.<region>.alloydb-psc.goog.`, **with a trailing dot**) to that IP.
+That work is identical in every example, so it is factored into the shared local module
+[`terraform/modules/psc-endpoint`](../../modules/psc-endpoint/), called here as
+`module.psc_endpoint`. Read the module if you want the detail — it is also where the
+`load_balancing_scheme = ""` trap is documented. The empty string is **required** on a PSC
+forwarding rule and any real load balancing scheme is rejected, which catches people out
+precisely because every other forwarding rule demands one.
 
-AlloyDB advertises the hostname but does not create the record. The language connectors
-and the Auth Proxy expect it to resolve. If `create_psc_dns = false` because you manage DNS
-centrally, **something** still has to create that record or nothing can connect. The
-`locals` block in `main.tf` derives the managed zone's `dns_name` by stripping the first
-label from the FQDN.
+What the module needs from this example is the network and subnet to place the endpoint
+in, the cluster's `psc_service_attachment_link`, and — when you want it to create DNS —
+the cluster's `psc_dns_name`.
+
+`create_psc_dns` **defaults to `false`**, and `terraform.tfvars.example` sets it
+explicitly so the decision is visible rather than inherited. Most organisations of any
+size manage DNS centrally and would rather a database module did not create zones
+underneath them. The consequence is that **something else has to create that record**:
+AlloyDB advertises a hostname of the form `<uid>.<region>.alloydb-psc.goog.` (with a
+trailing dot) but does not publish an A record for it, and both the Auth Proxy and the
+language connectors resolve the hostname rather than the IP. Until the record exists, the
+cluster can be perfectly healthy and nothing can connect. `terraform output
+psc_endpoint_summary` tells you exactly which name has to point at which address, and
+`psc_endpoint_ip` gives you the address on its own. When `create_psc_dns = true`, the
+module derives the managed zone's name by stripping the first label from the advertised
+FQDN, so one zone can hold records for several instances in the same region.
+
+One more consequence of the PSC path worth planning for: the Auth Proxy needs the `--psc`
+flag, and the subnet needs Private Google Access so the proxy can reach `googleapis.com`.
 
 ### Why `require_connectors = true` is the control that matters
 
@@ -565,12 +597,15 @@ gcloud alloydb instances describe "$INSTANCE" \
   grep -E 'iam_authentication|iam_group|pgaudit|auditlog_volume|pg_authid|pg_shadow|password\.'
 
 # 6. PSC endpoint and DNS resolve correctly. Run the dig from INSIDE the VPC.
+terraform output psc_endpoint_summary
 terraform output psc_endpoint_ip
 terraform output psc_dns_name
 gcloud compute forwarding-rules describe "alloydb-sec-alloydb-psc-ep" \
   --region="$REGION" --project="$PROJECT" \
   --format='yaml(IPAddress,target,loadBalancingScheme)'
-gcloud dns record-sets list --zone="alloydb-sec-alloydb-psc" --project="$PROJECT"
+# The managed zone exists only when create_psc_dns = true; it takes the same
+# name as the endpoint. With the default (false), check your own DNS instead.
+gcloud dns record-sets list --zone="alloydb-sec-alloydb-psc-ep" --project="$PROJECT"
 # From a VM in the subnet:
 #   dig +short "$(terraform output -raw psc_dns_name)"   # must return psc_endpoint_ip
 
@@ -605,8 +640,9 @@ gcloud alloydb instances describe "$INSTANCE" --cluster="$CLUSTER" \
 Connectivity test — note there is no plain-`psql` option:
 
 ```bash
-# require_connectors = true, so this is the ONLY way in.
-./alloydb-auth-proxy --auto-iam-authn \
+# require_connectors = true, so this is the ONLY way in. On the PSC path the
+# proxy needs --psc, and it resolves psc_dns_name, so the A record must exist.
+./alloydb-auth-proxy --psc --auto-iam-authn \
   "projects/$PROJECT/locations/$REGION/clusters/$CLUSTER/instances/$INSTANCE"
 psql -h 127.0.0.1 -U "your-sa-name@your-project.iam" -d postgres
 ```
@@ -640,7 +676,7 @@ psql -h 127.0.0.1 -U "your-sa-name@your-project.iam" -d postgres
 ### Step 1 — disable the cluster's deletion protection and apply
 
 ```bash
-cd terraform/examples/04-secure-cmek-psc
+cd terraform/examples/04-secure-cmek
 
 # Edit main.tf inside the module.alloydb block:
 #   deletion_protection = true   ->   deletion_protection = false
@@ -725,11 +761,14 @@ Operations docs:
 Next examples:
 
 - **[`05-cross-region-dr`](../05-cross-region-dr/README.md)** — a `REGIONAL` instance
-  survives a zone, not a region. Note that a CMEK cluster's secondary needs a key in the
-  *secondary's* region with its own service-agent grant; that example does not use CMEK.
+  survives a zone, not a region. It also shows the multi-region consequence of PSC: an
+  endpoint is regional, so a DR pair runs two of them. Note that a CMEK cluster's
+  secondary needs a key in the *secondary's* region with its own service-agent grant;
+  that example does not use CMEK.
 - **[`03-read-pool-scaling`](../03-read-pool-scaling/README.md)** — read pools inherit the
-  cluster's PSC config and `require_connectors` setting, so the hardened posture extends to
-  them cleanly.
+  cluster's `require_connectors` setting, so the hardened posture extends to them cleanly.
+  On PSC each pool publishes its **own** service attachment, so each one also needs its
+  own endpoint and DNS record.
 - **[`02-prod-ha`](../02-prod-ha/README.md)** — the less restrictive production baseline,
   if this posture is more than your workload warrants.
 

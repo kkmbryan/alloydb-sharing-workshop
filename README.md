@@ -32,8 +32,8 @@ Everything here is designed to be **copied and adapted**, not deployed as-is.
 .
 ├── docs/04-operations/        Operational guidance — the written material
 ├── terraform/
-│   ├── modules/               Three reusable modules
-│   └── examples/              Five complete, runnable configurations
+│   ├── modules/               Four reusable modules
+│   └── examples/              Five complete, runnable configurations (all on PSC)
 ├── config/
 │   ├── database-flags/        Curated flag baselines with restart annotations
 │   └── connection-pooling/    Managed Connection Pooling and app-side sizing
@@ -45,20 +45,25 @@ Everything here is designed to be **copied and adapted**, not deployed as-is.
 
 ### Terraform examples
 
+All five examples standardise on **Private Service Connect (PSC)** rather than VPC peering.
+See [`terraform/examples/README.md`](terraform/examples/README.md) for the architectural
+rationale, consumer responsibilities, and guidance if your organisation uses PSA.
+
 | Example | Demonstrates | Production ready |
 | --- | --- | --- |
-| [01-dev-minimal](terraform/examples/01-dev-minimal) | VPC + PSA, single zonal instance. The one to read first. | No — no HA |
+| [01-dev-minimal](terraform/examples/01-dev-minimal) | VPC + PSC, single zonal instance. The one to read first. | No — no HA |
 | [02-prod-ha](terraform/examples/02-prod-ha) | Regional HA, managed pooling, IAM auth, pgAudit, full alerting | **Yes** |
-| [03-read-pool-scaling](terraform/examples/03-read-pool-scaling) | Read pools with workload isolation between app and analytics | Yes |
-| [04-secure-cmek-psc](terraform/examples/04-secure-cmek-psc) | CMEK, Private Service Connect, connector-only access, SIEM export | **Yes — hardened** |
-| [05-cross-region-dr](terraform/examples/05-cross-region-dr) | Cross-region secondary cluster, switchover and promote runbooks | Yes |
+| [03-read-pool-scaling](terraform/examples/03-read-pool-scaling) | Read pools with per-pool PSC endpoints and workload isolation | Yes |
+| [04-secure-cmek](terraform/examples/04-secure-cmek) | CMEK, connector-only access, SIEM export, hardened audit baseline | **Yes — hardened** |
+| [05-cross-region-dr](terraform/examples/05-cross-region-dr) | Cross-region secondary cluster, dual regional PSC endpoints, DR runbooks | Yes |
 
 ### Terraform modules
 
 | Module | Purpose |
 | --- | --- |
-| [`alloydb-cluster`](terraform/modules/alloydb-cluster) | Cluster, primary instance, read pools, backups, CMEK, pooling |
-| [`network`](terraform/modules/network) | VPC, subnet, Private Services Access, firewall rules |
+| [`alloydb-cluster`](terraform/modules/alloydb-cluster) | Cluster, primary instance, read pools, backups, CMEK, pooling (PSA or PSC) |
+| [`network`](terraform/modules/network) | VPC, subnet, firewall rules (optional PSA peering toggle) |
+| [`psc-endpoint`](terraform/modules/psc-endpoint) | Consumer-side PSC endpoint (forwarding rule + address) and optional private DNS |
 | [`observability`](terraform/modules/observability) | Nine alert policies and a dashboard, using verified metric names |
 
 ### Operations documentation
@@ -102,10 +107,10 @@ Required APIs:
 gcloud services enable \
   alloydb.googleapis.com \
   compute.googleapis.com \
-  servicenetworking.googleapis.com \
-  monitoring.googleapis.com
-# Example 04 additionally needs:
-#   cloudkms.googleapis.com dns.googleapis.com
+  monitoring.googleapis.com \
+  dns.googleapis.com
+# servicenetworking.googleapis.com is only needed if using PSA
+# cloudkms.googleapis.com is needed for CMEK (04-secure-cmek)
 ```
 
 > [!WARNING]
@@ -132,7 +137,9 @@ before you add a single read pool node. → [sizing-guide](docs/04-operations/si
 
 **3. PSA or PSC is a permanent decision.**
 The private access method is fixed at cluster creation and cannot be changed
-afterwards. Choose deliberately. → [security-hardening](docs/04-operations/security-hardening.md)
+afterwards. This repository standardises on Private Service Connect (PSC) because
+it eliminates VPC peering, prevents address-space collisions, and scopes access
+by project number. Choose deliberately. → [security-hardening](docs/04-operations/security-hardening.md)
 
 **4. Raising `max_connections` is almost always the wrong move.**
 Google's own guidance table plateaus at 5,000 regardless of instance size.

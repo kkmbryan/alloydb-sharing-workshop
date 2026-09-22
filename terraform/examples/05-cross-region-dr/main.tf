@@ -26,9 +26,22 @@
 # ---------------------------------------------------------------------------
 # Networking in both regions
 #
-# PSA is per-VPC-per-producer, so a single VPC with a subnet in each region
-# works. The reserved PSA range is global to the VPC and serves both.
+# One VPC with a subnet in each region. On the PSC path there is no peering
+# and no shared producer range, so the second region only needs its own subnet
+# to hold its own endpoint.
+#
+# Worth pausing on: a PSC endpoint is a REGIONAL resource, and each AlloyDB
+# instance publishes its own service attachment. A two-region deployment
+# therefore has two endpoints, two addresses and two DNS names - and a
+# failover is partly a networking event, not just a database one. That
+# cutover step belongs in the DR runbook.
 # ---------------------------------------------------------------------------
+
+# PSC allow-lists consumer PROJECT NUMBERS, not project IDs.
+data "google_project" "this" {
+  project_id = var.project_id
+}
+
 module "network_primary" {
   source = "../../modules/network"
 
@@ -38,7 +51,10 @@ module "network_primary" {
   subnet_cidr = var.primary_subnet_cidr
 
   create_network = true
-  enable_psa     = true
+
+  # PSC, not PSA. See terraform/examples/README.md.
+  enable_psa                   = false
+  enable_private_google_access = true
 }
 
 module "network_secondary" {
@@ -49,10 +65,12 @@ module "network_secondary" {
   name_prefix = "${var.name_prefix}-dr"
   subnet_cidr = var.secondary_subnet_cidr
 
-  # Reuse the VPC and its existing PSA peering.
+  # Reuse the VPC; add a subnet in the DR region for its PSC endpoint.
   create_network        = false
   existing_network_name = module.network_primary.network_name
-  enable_psa            = false
+
+  enable_psa                   = false
+  enable_private_google_access = true
 
   depends_on = [module.network_primary]
 }
@@ -74,6 +92,14 @@ locals {
 
   # Referenced by outputs.tf so the DR runbook can never quote a stale number.
   pitr_window_days = 14
+
+  # Both clusters allow the same consumers. After a promote, the application
+  # connects to the DR endpoint, so the allow-list has to already include
+  # whoever will be connecting - the middle of an incident is not the time to
+  # discover it does not.
+  psc_consumer_projects = length(var.psc_allowed_consumer_projects) > 0 ? (
+    var.psc_allowed_consumer_projects
+  ) : [data.google_project.this.number]
 }
 
 # ---------------------------------------------------------------------------
@@ -88,8 +114,9 @@ module "alloydb_primary" {
 
   cluster_type = "PRIMARY"
 
-  network_self_link  = module.network_primary.network_self_link
-  allocated_ip_range = module.network_primary.psa_range_name
+  # --- Networking (PSC) ---
+  psc_enabled                   = true
+  psc_allowed_consumer_projects = local.psc_consumer_projects
 
   cpu_count = var.cpu_count
 
@@ -145,8 +172,11 @@ module "alloydb_secondary" {
   cluster_type         = "SECONDARY"
   primary_cluster_name = module.alloydb_primary.cluster_name
 
-  network_self_link  = module.network_primary.network_self_link
-  allocated_ip_range = module.network_primary.psa_range_name
+  # --- Networking (PSC) ---
+  # The secondary is an independent cluster in its own region, so it publishes
+  # its own service attachment and gets its own endpoint below.
+  psc_enabled                   = true
+  psc_allowed_consumer_projects = local.psc_consumer_projects
 
   # Same shape as the primary. Do not economise here.
   cpu_count         = var.cpu_count
@@ -179,6 +209,75 @@ module "alloydb_secondary" {
     module.alloydb_primary,
     module.network_secondary,
   ]
+}
+
+# ---------------------------------------------------------------------------
+# Consumer-side PSC endpoints - one per region
+#
+# This is the PSC design point for DR. An endpoint is regional and points at
+# one service attachment, so it cannot follow a failover. You end up with two
+# permanent endpoints: the one your application uses today, and the one it
+# will use after a promote.
+#
+# That makes the cutover explicit rather than magical, which is a good thing
+# for a runbook, but it does mean the runbook must include the step. Options,
+# roughly in order of how often we see them:
+#
+#   1. A CNAME your application resolves, repointed at promote time. Simple,
+#      and the TTL is the cutover delay - keep it short.
+#   2. Application config or a service-discovery entry, changed as part of the
+#      failover procedure.
+#   3. Two connection strings in the application, with a feature flag.
+#
+# Whichever you choose, rehearse it. A DR test that skips the connectivity
+# cutover is testing the easy half of the problem.
+# ---------------------------------------------------------------------------
+module "psc_endpoint_primary" {
+  source = "../../modules/psc-endpoint"
+
+  project_id = var.project_id
+  region     = var.primary_region
+  name       = "${var.name_prefix}-primary-psc"
+
+  network_self_link = module.network_primary.network_self_link
+  subnet_self_link  = module.network_primary.subnet_self_link
+
+  service_attachment_link = module.alloydb_primary.psc_service_attachment_link
+
+  create_dns = var.create_psc_dns
+  dns_name   = module.alloydb_primary.psc_dns_name
+
+  labels = {
+    env  = "dr-demo"
+    role = "primary"
+  }
+}
+
+module "psc_endpoint_secondary" {
+  source = "../../modules/psc-endpoint"
+
+  project_id = var.project_id
+
+  # Different region, different subnet, different address. A PSC endpoint
+  # cannot span regions.
+  region = var.secondary_region
+  name   = "${var.name_prefix}-secondary-psc"
+
+  network_self_link = module.network_primary.network_self_link
+  subnet_self_link  = module.network_secondary.subnet_self_link
+
+  service_attachment_link = module.alloydb_secondary.psc_service_attachment_link
+
+  # Create this endpoint now, not during the incident. It costs an internal IP
+  # and buys you a failover that does not depend on Terraform being runnable
+  # while a region is down.
+  create_dns = var.create_psc_dns
+  dns_name   = module.alloydb_secondary.psc_dns_name
+
+  labels = {
+    env  = "dr-demo"
+    role = "secondary"
+  }
 }
 
 # ---------------------------------------------------------------------------

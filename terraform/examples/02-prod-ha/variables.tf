@@ -21,13 +21,46 @@ variable "subnet_cidr" {
   default     = "10.20.0.0/24"
 }
 
-variable "psa_range_address" {
+variable "psc_allowed_consumer_projects" {
   description = <<-EOT
-    Start address of the reserved Private Services Access range, e.g.
-    "10.100.0.0". Pin it in production so it is stable and documentable.
+    Project NUMBERS (as strings) permitted to create a PSC endpoint against
+    this instance. Project numbers, not project IDs.
+
+    Leave empty to allow only this project, which is the least-privilege
+    choice. Each additional entry is a grant of network reachability to the
+    database, so add them deliberately and review them like any other access
+    grant.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "psc_endpoint_ip" {
+  description = <<-EOT
+    Static internal IP for the PSC endpoint, from within subnet_cidr.
+
+    Pin it in production so firewall rules, IPAM records and runbooks can
+    reference a stable address. Leave null to let GCP pick one.
   EOT
   type        = string
-  default     = "10.100.0.0"
+  default     = null
+}
+
+variable "create_psc_dns" {
+  description = <<-EOT
+    Whether to create a private Cloud DNS zone and A record mapping the
+    AlloyDB-advertised PSC hostname to the endpoint IP.
+
+    Defaults to false because most organisations manage DNS centrally and
+    would rather this configuration did not create zones underneath them.
+
+    Something still has to create that record. The Auth Proxy and the language
+    connectors resolve the hostname rather than the IP, so until the record
+    exists they cannot connect. The psc_endpoint_summary output tells you which
+    name to point at which address.
+  EOT
+  type        = bool
+  default     = false
 }
 
 variable "cpu_count" {

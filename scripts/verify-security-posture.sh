@@ -64,7 +64,7 @@ PASS=0; FAIL=0; WARN=0
 pass() { printf "  ${GREEN}PASS${NC}  %s\n" "$1"; PASS=$((PASS+1)); }
 fail() { printf "  ${RED}FAIL${NC}  %s\n" "$1"; [[ -n "${2:-}" ]] && printf "        ${YELLOW}-> %s${NC}\n" "$2"; FAIL=$((FAIL+1)); }
 warn() { printf "  ${YELLOW}WARN${NC}  %s\n" "$1"; [[ -n "${2:-}" ]] && printf "        ${YELLOW}-> %s${NC}\n" "$2"; WARN=$((WARN+1)); }
-info() { printf "  ${BLUE}INFO${NC}  %s\n" "$1"; }
+info() { printf "  ${BLUE}INFO${NC}  %s\n" "$1"; [[ -n "${2:-}" ]] && printf "        ${BLUE}-> %s${NC}\n" "$2"; return 0; }
 section() { printf "\n${BOLD}%s${NC}\n" "$1"; }
 
 printf "${BOLD}AlloyDB security posture${NC}\n"
@@ -115,7 +115,8 @@ NETWORK=$(jq -r '.networkConfig.network // empty' <<<"$CLUSTER_JSON")
 if [[ "$PSC_ENABLED" == "true" ]]; then
   pass "Private Service Connect enabled (no VPC peering)"
 elif [[ -n "$NETWORK" ]]; then
-  info "Private Services Access via $NETWORK"
+  info "Private services access via $NETWORK" \
+       "Supported and private, but this repository's examples standardise on PSC. The choice is fixed at cluster creation and cannot be changed in place."
 else
   warn "Could not determine the private access method"
 fi

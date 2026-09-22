@@ -3,19 +3,38 @@ output "cluster_name" {
   value       = module.alloydb.cluster_name
 }
 
-output "primary_ip_address" {
-  description = "Private IP of the primary. Send all writes here."
-  value       = module.alloydb.primary_ip_address
+output "primary_psc_endpoint_ip" {
+  description = "PSC endpoint IP for the primary. Send all writes here."
+  value       = module.psc_endpoint_primary.ip_address
 }
 
-output "read_pool_ip_addresses" {
+output "read_pool_psc_endpoint_ips" {
   description = <<-EOT
-    Map of read pool instance_id to private IP.
+    Map of read pool instance_id to its PSC endpoint IP.
 
-    Each read pool instance has ONE stable endpoint that load balances across
-    its nodes, so adding nodes does not change the connection string.
+    Each read pool instance has ONE endpoint that load balances across its
+    nodes, so adding nodes does not change the connection string. Adding a
+    POOL does: a new pool means a new service attachment, a new endpoint and a
+    new DNS record.
   EOT
-  value       = module.alloydb.read_pool_ip_addresses
+  value       = { for k, m in module.psc_endpoint_read_pool : k => m.ip_address }
+}
+
+output "psc_dns_records_required" {
+  description = <<-EOT
+    Every hostname that must resolve, and the address it must resolve to.
+
+    If create_psc_dns is false, create these records wherever your DNS is
+    managed. The Auth Proxy and the language connectors resolve the hostname
+    rather than the IP, so nothing connects until they exist.
+  EOT
+  value = merge(
+    { (coalesce(module.alloydb.psc_dns_name, "primary-pending")) = module.psc_endpoint_primary.ip_address },
+    {
+      for k, m in module.psc_endpoint_read_pool :
+      coalesce(module.alloydb.read_pool_psc_dns_names[k], "${k}-pending") => m.ip_address
+    }
+  )
 }
 
 output "read_pool_nodes_used" {
@@ -32,9 +51,12 @@ output "routing_guidance" {
   description = "How the application should route traffic across these endpoints."
   value       = <<-EOT
 
-    Writes and read-your-own-writes  -> primary (${module.alloydb.primary_ip_address})
-    Application reads                -> app read pool
-    Reports, BI, exports             -> analytics read pool
+    Writes and read-your-own-writes  -> primary (${module.psc_endpoint_primary.ip_address})
+    Application reads                -> app read pool endpoint
+    Reports, BI, exports             -> analytics read pool endpoint
+
+    Each of those is a separate PSC endpoint in your subnet. See the
+    read_pool_psc_endpoint_ips output for the addresses.
 
     Read pools are asynchronous. A read issued immediately after a write may
     not see it. Route any read that must observe a just-completed write to the

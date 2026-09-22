@@ -8,14 +8,33 @@ output "secondary_cluster_name" {
   value       = module.alloydb_secondary.cluster_name
 }
 
-output "primary_ip_address" {
-  description = "Private IP of the primary instance. All writes go here."
-  value       = module.alloydb_primary.primary_ip_address
+output "primary_psc_endpoint_ip" {
+  description = "PSC endpoint IP in the primary region. All writes go here today."
+  value       = module.psc_endpoint_primary.ip_address
 }
 
-output "secondary_ip_address" {
-  description = "Private IP of the secondary instance. Read-only until promoted."
-  value       = module.alloydb_secondary.primary_ip_address
+output "secondary_psc_endpoint_ip" {
+  description = <<-EOT
+    PSC endpoint IP in the DR region. Read-only until the cluster is promoted.
+
+    This exists before the incident on purpose. Creating an endpoint while a
+    region is down, with Terraform possibly unusable, is not a plan.
+  EOT
+  value       = module.psc_endpoint_secondary.ip_address
+}
+
+output "psc_dns_records_required" {
+  description = <<-EOT
+    Hostnames that must resolve, and the addresses they must resolve to.
+
+    If create_psc_dns is false, create both records wherever your DNS is
+    managed - the DR one included. Creating it only at failover time adds
+    propagation delay to your RTO.
+  EOT
+  value = {
+    (coalesce(module.alloydb_primary.psc_dns_name, "primary-pending"))     = module.psc_endpoint_primary.ip_address
+    (coalesce(module.alloydb_secondary.psc_dns_name, "secondary-pending")) = module.psc_endpoint_secondary.ip_address
+  }
 }
 
 output "total_vcpu_quota" {
@@ -60,11 +79,19 @@ output "dr_runbook" {
     ========================================================================
     After ANY failover
     ========================================================================
-    1. Repoint applications. AlloyDB does not move the endpoint for you -
-       the new primary has a different IP in a different region. Whatever
-       handles that (DNS, config, service discovery) is YOUR RTO bottleneck,
-       not AlloyDB's. Automate and rehearse it.
-    2. Recreate read pools. They do not carry across.
+    1. Repoint applications to the DR endpoint. AlloyDB does not move the
+       endpoint for you, and neither does PSC: an endpoint is regional and
+       targets one service attachment, so the DR region has its own address:
+
+         today       ${module.psc_endpoint_primary.ip_address}   (${var.primary_region})
+         after promote ${module.psc_endpoint_secondary.ip_address}   (${var.secondary_region})
+
+       Whatever performs that switch - a CNAME you repoint, application
+       config, service discovery - is YOUR RTO bottleneck, not AlloyDB's.
+       Automate it, keep the TTL short, and rehearse it. A DR drill that skips
+       this step has tested the easy half.
+    2. Recreate read pools. They do not carry across, and on PSC each new pool
+       also needs its own endpoint and DNS record.
     3. Re-establish backup policy and monitoring on the new primary.
     4. Update Terraform: after a promote, cluster_type has changed underneath
        you. The module sets lifecycle.ignore_changes on instance_type to stop

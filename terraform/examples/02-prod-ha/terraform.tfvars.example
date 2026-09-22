@@ -2,9 +2,19 @@
 project_id = "my-project-id"
 region     = "us-central1"
 
-name_prefix       = "alloydb-wk"
-subnet_cidr       = "10.20.0.0/24"
-psa_range_address = "10.100.0.0"
+name_prefix = "alloydb-wk"
+subnet_cidr = "10.20.0.0/24"
+
+# Pin the PSC endpoint IP so firewall rules and runbooks have a stable target.
+# Must sit inside subnet_cidr. Leave unset to let GCP allocate one.
+psc_endpoint_ip = "10.20.0.10"
+
+# Project NUMBERS allowed to create an endpoint. Empty = this project only.
+# psc_allowed_consumer_projects = ["123456789012"]
+
+# Leave false if DNS is managed centrally, then create the A record yourself
+# from the psc_endpoint_summary output.
+create_psc_dns = false
 
 # A REGIONAL primary consumes 2x this in vCPU quota (active + standby).
 cpu_count = 8

@@ -9,7 +9,7 @@
 **Companion document:** [security-hardening.md](./security-hardening.md) covers
 the preventive controls. This one covers the detective controls.
 
-**Reference implementation:** [`terraform/examples/04-secure-cmek-psc/`](../../terraform/examples/04-secure-cmek-psc/)
+**Reference implementation:** [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
 
 ---
 
@@ -1088,7 +1088,7 @@ the room and the one most teams cannot answer.
 
 - [security-hardening.md](./security-hardening.md) — the preventive baseline
   these logs are evidence for
-- [`terraform/examples/04-secure-cmek-psc/`](../../terraform/examples/04-secure-cmek-psc/)
+- [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
   — reference implementation including audit configuration
 - [monitoring-metrics.md](./monitoring-metrics.md) — the metric catalogue,
   including the `node/database/logging/audit/*` family used above

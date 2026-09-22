@@ -3,15 +3,15 @@
 ## Purpose
 
 This is the reference production deployment for AlloyDB, and the example to copy if you
-only copy one. It builds a `REGIONAL` (highly available) cluster behind Private Services
-Access, then layers on the controls a security team actually asks about: pgAudit with
-Data Access logs, IAM database authentication so the application holds no password,
+only copy one. It builds a `REGIONAL` (highly available) cluster behind Private Service
+Connect (PSC), then layers on the controls a security team actually asks about: pgAudit
+with Data Access logs, IAM database authentication so the application holds no password,
 password-hash read restrictions, a hardened flag baseline, Managed Connection Pooling,
 30 scheduled backups plus a 14-day point-in-time recovery window, a pinned maintenance
 window, nine alert policies with a dashboard, and deletion protection. Use it as the
 starting template for any real workload. Read
 [`01-dev-minimal`](../01-dev-minimal/README.md) first if you have not yet seen how the
-PSA plumbing works.
+PSC plumbing works.
 
 > [!IMPORTANT]
 > `deletion_protection = true` in this example. You **cannot** `terraform destroy` it
@@ -25,13 +25,15 @@ PSA plumbing works.
 | Resource | Terraform address | Purpose |
 | --- | --- | --- |
 | VPC | `module.network.google_compute_network.this` | Custom-mode VPC `<prefix>-vpc`. |
-| Subnet | `module.network.google_compute_subnetwork.app` | `<prefix>-<region>-app`, Private Google Access on, Flow Logs at 0.5 sampling. |
-| Reserved PSA range | `module.network.google_compute_global_address.psa_range` | **Pinned** `/16` starting at `psa_range_address` (default `10.100.0.0`). |
-| Service networking connection | `module.network.google_service_networking_connection.psa` | The VPC peering that makes PSA work. |
+| Subnet | `module.network.google_compute_subnetwork.app` | `<prefix>-<region>-app`, Private Google Access on, Flow Logs at 0.5 sampling. Hosts client workloads and the PSC endpoint. |
 | Firewall: allow Postgres | `module.network.google_compute_firewall.allow_postgres_internal` | TCP 5432 + 6432 within the subnet. |
 | Firewall: logged deny-all | `module.network.google_compute_firewall.deny_all_ingress_logged` | Priority 65534 explicit deny, logged — the implicit deny cannot log. |
-| AlloyDB cluster | `module.alloydb.google_alloydb_cluster.this` | `<prefix>-prod`. Owns storage, backups, maintenance window, network attachment. |
-| AlloyDB primary instance | `module.alloydb.google_alloydb_instance.primary` | `<prefix>-prod-primary`. `REGIONAL`, `cpu_count` vCPU (default 8), hardened flags, connection pool on. |
+| Project lookup | `data.google_project.this` | Supplies this project's number for the PSC consumer allow-list. |
+| AlloyDB cluster | `module.alloydb.google_alloydb_cluster.this` | `<prefix>-prod`. `psc_enabled = true`. Owns storage, backups, maintenance window, network attachment. |
+| AlloyDB primary instance | `module.alloydb.google_alloydb_instance.primary` | `<prefix>-prod-primary`. `REGIONAL`, `cpu_count` vCPU (default 8), hardened flags, connection pool on. Publishes its own service attachment. |
+| PSC endpoint IP | `module.psc_endpoint.google_compute_address.psc` | `<prefix>-prod-psc`. Internal IP reserved in the subnet. Pinned at `var.psc_endpoint_ip` (default `10.20.0.10`). |
+| PSC forwarding rule | `module.psc_endpoint.google_compute_forwarding_rule.psc` | Consumer-side endpoint targeting AlloyDB's service attachment. `load_balancing_scheme = ""`. |
+| Private DNS zone & A record | `module.psc_endpoint.google_dns_*` | *Conditional on `create_psc_dns` (default `false`).* Maps `psc_dns_name` to the endpoint IP. |
 | IAM database user | `google_alloydb_user.app_iam` | *Conditional on `app_service_account_email`.* Registers the app SA as an `ALLOYDB_IAM_USER` with role `alloydbiamuser`. |
 | Project IAM binding | `google_project_iam_member.app_alloydb_client` | *Conditional.* `roles/alloydb.client` for the app SA. |
 | Project IAM binding | `google_project_iam_member.app_alloydb_db_user` | *Conditional.* `roles/alloydb.databaseUser` for the app SA. |
@@ -40,8 +42,9 @@ PSA plumbing works.
 | Alert policies ×9 | `module.observability` | CPU, connection utilisation, available memory, transaction-ID utilisation, storage quota, replication lag, node down, backup staleness, audit backlog. |
 | Dashboard | `module.observability.google_monitoring_dashboard.alloydb` | Bundled Cloud Monitoring overview dashboard. |
 
-Outputs: `cluster_name`, `primary_instance_name`, `primary_ip_address`,
-`vcpu_quota_consumed`, `alert_policies`, `dashboard_id`, `connection_notes`.
+Outputs: `cluster_name`, `primary_instance_name`, `psc_endpoint_ip`, `psc_dns_name`,
+`psc_service_attachment`, `psc_endpoint_summary`, `vcpu_quota_consumed`, `alert_policies`,
+`dashboard_id`, `connection_notes`.
 
 ---
 
@@ -49,11 +52,13 @@ Outputs: `cluster_name`, `primary_instance_name`, `primary_ip_address`,
 
 ```mermaid
 flowchart TB
-  subgraph vpc["Your VPC (prefix-vpc)"]
+  subgraph vpc["Your VPC (prefix-vpc) - no peering to Google"]
     app["Application<br/>service account identity"]
-    subnet["Subnet prefix-region-app<br/>10.20.0.0/24"]
-    psarange["Pinned PSA range<br/>10.100.0.0/16"]
+    subnet["Subnet prefix-region-app<br/>10.20.0.0/24<br/>Private Google Access ON"]
+    epip["Reserved internal IP<br/>10.20.0.10"]
+    fr["PSC forwarding rule<br/>load_balancing_scheme = empty string"]
     app --- subnet
+    epip --- fr
   end
 
   subgraph producer["Google producer network"]
@@ -63,13 +68,15 @@ flowchart TB
       standby["Standby node<br/>zone B"]
     end
     pooler["Managed Connection Pooling<br/>port 6432, transaction mode"]
+    sa["PSC Service Attachment"]
     cluster --- inst
     inst --- pooler
+    inst --- sa
   end
 
-  psarange -->|"VPC peering via servicenetworking"| producer
-  app -->|"port 6432, pooled, IAM auth"| pooler
-  app -->|"port 5432, direct - migrations only"| active
+  fr -->|"Private Service Connect"| sa
+  app -->|"port 6432, pooled, IAM auth"| epip
+  app -->|"port 5432, direct - migrations only"| epip
   active <-->|"synchronous, shared regional storage"| standby
 
   subgraph obs["Observability and audit"]
@@ -90,11 +97,13 @@ flowchart TB
 ```bash
 gcloud services enable \
   alloydb.googleapis.com \
-  servicenetworking.googleapis.com \
   compute.googleapis.com \
   monitoring.googleapis.com \
+  dns.googleapis.com \
   --project=YOUR_PROJECT_ID
 ```
+
+*(Note: `dns.googleapis.com` is only required if `create_psc_dns = true`.)*
 
 ### IAM for whoever runs Terraform
 
@@ -104,8 +113,8 @@ not a Google-published list.
 | Role | Needed for |
 | --- | --- |
 | `roles/alloydb.admin` | Cluster, instance, and the `google_alloydb_user` resource |
-| `roles/compute.networkAdmin` | VPC, subnet, global address, firewall rules |
-| `roles/servicenetworking.networksAdmin` | The PSA peering |
+| `roles/compute.networkAdmin` | VPC, subnet, PSC forwarding rule and address, firewall rules |
+| `roles/dns.admin` | *Conditional on `create_psc_dns`.* Private DNS zone and A record |
 | `roles/resourcemanager.projectIamAdmin` | The two `google_project_iam_member` grants and the audit config |
 | `roles/monitoring.editor` | Alert policies, notification channel, dashboard |
 
@@ -146,7 +155,7 @@ cp terraform.tfvars.example terraform.tfvars
 $EDITOR terraform.tfvars
 # At minimum set project_id. Consider also:
 #   cpu_count                 (remember: 2x for quota)
-#   psa_range_address         (pin it, document it in IPAM)
+#   psc_endpoint_ip           (pin it, document it in IPAM)
 #   app_service_account_email (enables the IAM-auth path)
 #   alert_email               (otherwise policies exist but nobody is paged)
 
@@ -178,14 +187,20 @@ whole thing out. For region-level protection you need a secondary cluster — se
 [`05-cross-region-dr`](../05-cross-region-dr/README.md). HA and DR are different
 controls solving different problems, and you need both.
 
-### Why the PSA range is pinned (`psa_range_address`, `/16`)
+### Why the PSC endpoint IP is pinned (`psc_endpoint_ip`)
 
-In `01-dev-minimal` the range is auto-allocated, which is fine for a sandbox. In
-production an auto-allocated range is a range you cannot document, cannot pre-clear with
-your network team, and which may land somewhere that collides with a future peering. The
-range is handed to Google's producer network and is effectively permanent for the life of
-the VPC. Pin it, write it into IPAM, and size it `/16` so future managed services on the
-same VPC have room.
+In `01-dev-minimal` the endpoint's internal IP is allocated dynamically by Compute Engine.
+In production an auto-allocated endpoint IP is an IP you cannot document in advance, cannot
+pre-clear with firewall rules, and which might move if the endpoint is ever recreated.
+Pin it to a known address inside `subnet_cidr` (such as `10.20.0.10`), write it into IPAM,
+and reference it stably in client configurations.
+
+### If your organisation uses PSA
+
+Private Services Access remains fully supported. If your enterprise standardises on VPC
+peering rather than PSC, set `enable_psa = true` on `module.network` and pass
+`network_self_link` plus `allocated_ip_range` to `module.alloydb` instead of `psc_enabled`.
+Remember that the choice between PSA and PSC is permanent at cluster creation.
 
 ### Why `pgaudit.log = "ddl,role"` and not `"all"`
 
@@ -205,7 +220,7 @@ these records are delivered as billable Data Access logs.
 
 The correct sequence is: start at `ddl,role`, measure your actual log volume for a week,
 then add `write` if your compliance regime demands it, and only consider `read` with a
-volume-reduction strategy in place. [`04-secure-cmek-psc`](../04-secure-cmek-psc/README.md)
+volume-reduction strategy in place. [`04-secure-cmek`](../04-secure-cmek/README.md)
 defaults to `ddl,role,write` because it targets a higher-assurance posture and pairs it
 with `alloydb.enable_auditlog_volume_reduction`.
 
@@ -460,21 +475,39 @@ REGION=us-central1
 CLUSTER=alloydb-wk-prod        # name_prefix + "-prod"
 INSTANCE="${CLUSTER}-primary"
 
-# 1. Cluster: READY, PSA-attached, backups and maintenance window as configured.
+# 1. Cluster: READY, on the PSC path, backups and maintenance window as configured.
 gcloud alloydb clusters describe "$CLUSTER" \
   --region="$REGION" --project="$PROJECT" \
-  --format='yaml(state,clusterType,networkConfig,automatedBackupPolicy,continuousBackupConfig,maintenanceUpdatePolicy,deletionPolicy)'
-# Expect: continuousBackupConfig.recoveryWindowDays: 14
+  --format='yaml(state,clusterType,pscConfig,automatedBackupPolicy,continuousBackupConfig,maintenanceUpdatePolicy,deletionPolicy)'
+# Expect: pscConfig.pscEnabled: true, and no networkConfig
+#         continuousBackupConfig.recoveryWindowDays: 14
 #         automatedBackupPolicy.quantityBasedRetention.count: 30
 #         maintenanceUpdatePolicy ... day: SUNDAY, hours: 4
 
-# 2. Instance: REGIONAL HA, SSL enforced, pooling on.
+# 2. Instance: REGIONAL HA, SSL enforced, pooling on, service attachment published.
 gcloud alloydb instances describe "$INSTANCE" \
   --cluster="$CLUSTER" --region="$REGION" --project="$PROJECT" \
-  --format='yaml(state,instanceType,availabilityType,machineConfig,clientConnectionConfig,connectionPoolConfig,ipAddress)'
+  --format='yaml(state,instanceType,availabilityType,machineConfig,clientConnectionConfig,connectionPoolConfig,pscInstanceConfig)'
 # Expect: availabilityType: REGIONAL
 #         clientConnectionConfig.sslConfig.sslMode: ENCRYPTED_ONLY
 #         connectionPoolConfig.enabled: true, flags.pool_mode: transaction
+#         pscInstanceConfig.serviceAttachmentLink and .pscDnsName populated
+# ipAddress is empty on the PSC path. That is expected: the instance has no IP in
+# your VPC, your endpoint does.
+
+# 2b. The consumer endpoint exists and the producer accepted the connection.
+gcloud compute forwarding-rules describe "alloydb-wk-prod-psc" \
+  --region="$REGION" --project="$PROJECT" \
+  --format='yaml(name,IPAddress,target,pscConnectionStatus)'
+# Expect: pscConnectionStatus: ACCEPTED, IPAddress matching psc_endpoint_ip (10.20.0.10
+#         at the sample tfvars), target matching the attachment from step 2.
+#         PENDING means the consumer project is not on the instance's allow-list -
+#         psc_allowed_consumer_projects takes project NUMBERS, not project IDs.
+
+# 2c. The advertised hostname resolves. Run from a host inside the VPC.
+dig +short "$(terraform output -raw psc_dns_name)"
+# Expect psc_endpoint_ip. An empty answer means the A record is missing, and neither
+# the Auth Proxy nor the language connectors will connect until it exists.
 
 # 3. The security-relevant flags actually landed.
 gcloud alloydb instances describe "$INSTANCE" \
@@ -514,14 +547,19 @@ Then connect:
 terraform output connection_notes
 
 # Pooled path (what the application should use):
-psql "host=$(terraform output -raw primary_ip_address) port=6432 user=postgres dbname=postgres sslmode=require"
+psql "host=$(terraform output -raw psc_endpoint_ip) port=6432 user=postgres dbname=postgres sslmode=require"
 
 # Direct path (migrations, session-scoped work):
-psql "host=$(terraform output -raw primary_ip_address) port=5432 user=postgres dbname=postgres sslmode=require"
+psql "host=$(terraform output -raw psc_endpoint_ip) port=5432 user=postgres dbname=postgres sslmode=require"
 
-# Passwordless via IAM:
-./alloydb-auth-proxy --auto-iam-authn "$(terraform output -raw primary_instance_name)"
+# Passwordless via IAM. --psc selects the PSC path; the proxy resolves the advertised
+# hostname, so the A record must exist first.
+./alloydb-auth-proxy --psc --auto-iam-authn "$(terraform output -raw primary_instance_name)"
 ```
+
+The Auth Proxy and Managed Connection Pooling compose without any change on your side:
+the service pools the proxy's connections in a separate pool, so applications behind the
+proxy keep pointing at the proxy's local port and need no reconfiguration.
 
 Useful diagnostic SQL lives in
 [`monitoring/sql/02_connections_and_locks.sql`](../../../monitoring/sql/02_connections_and_locks.sql).
@@ -562,10 +600,12 @@ ordering works. If you ever hit a stuck cluster, `FORCE` is the escape hatch —
 understand that it deletes the instances with it.
 
 > [!TIP]
-> The `google_service_networking_connection` uses `deletion_policy = "ABANDON"`, so the
-> VPC peering survives the destroy on purpose. Tearing down a service networking
-> connection is the classic way a database stack's destroy hangs. The leftover peering is
-> harmless and gets reused next time.
+> On the PSC path there is no service networking peering to unwind, which removes the
+> classic reason a database stack's destroy hangs. The endpoint's forwarding rule and
+> its reserved address go with the stack. The one thing Terraform will not tidy up is a
+> DNS record you created outside it: with `create_psc_dns = false`, removing that record
+> is your step. If the endpoint IP was pinned with `psc_endpoint_ip`, also check that
+> nothing else — a firewall policy, a runbook, an allow-list — still refers to it.
 
 Confirm nothing is left:
 
@@ -601,9 +641,9 @@ Next examples:
 
 - **[`03-read-pool-scaling`](../03-read-pool-scaling/README.md)** — add horizontal read
   capacity, and the workload-isolation pattern that matters more than node count.
-- **[`04-secure-cmek-psc`](../04-secure-cmek-psc/README.md)** — the higher-assurance
-  variant: Private Service Connect instead of PSA, CMEK, `require_connectors = true`, and
-  an audit export sink.
+- **[`04-secure-cmek`](../04-secure-cmek/README.md)** — the higher-assurance
+  variant: CMEK, `require_connectors = true`, wider pgAudit scope, and an audit export
+  sink. Connectivity is the same PSC pattern used here.
 - **[`05-cross-region-dr`](../05-cross-region-dr/README.md)** — because `REGIONAL` HA
   protects a zone, not a region.
 

@@ -11,7 +11,17 @@
 #
 # BUDGET: 20 read pool nodes per cluster, summed across all read pool
 # instances. Plan the split before you hit the ceiling.
+#
+# PSC NOTE: on the PSC path every instance - the primary AND each read pool -
+# publishes its own service attachment and therefore needs its own consumer
+# endpoint. That is visible at the bottom of this file, where the endpoints
+# are created with for_each over the pools.
 # ===========================================================================
+
+# PSC allow-lists consumer PROJECT NUMBERS, not project IDs.
+data "google_project" "this" {
+  project_id = var.project_id
+}
 
 module "network" {
   source = "../../modules/network"
@@ -20,7 +30,10 @@ module "network" {
   region      = var.region
   name_prefix = var.name_prefix
   subnet_cidr = var.subnet_cidr
-  enable_psa  = true
+
+  # PSC, not PSA. See terraform/examples/README.md.
+  enable_psa                   = false
+  enable_private_google_access = true
 }
 
 module "alloydb" {
@@ -30,8 +43,11 @@ module "alloydb" {
   region     = var.region
   cluster_id = "${var.name_prefix}-readscale"
 
-  network_self_link  = module.network.network_self_link
-  allocated_ip_range = module.network.psa_range_name
+  # --- Networking (PSC) ---
+  psc_enabled = true
+  psc_allowed_consumer_projects = length(var.psc_allowed_consumer_projects) > 0 ? (
+    var.psc_allowed_consumer_projects
+  ) : [data.google_project.this.number]
 
   cpu_count             = var.primary_cpu_count
   availability_type     = "REGIONAL"
@@ -112,6 +128,52 @@ module "alloydb" {
   }
 
   depends_on = [module.network]
+}
+
+# ---------------------------------------------------------------------------
+# Consumer-side PSC endpoints
+#
+# One per instance. This is the detail that surprises people when they move
+# read pools onto PSC: the primary and every read pool each publish their own
+# service attachment, so "add a read pool" is also "add an endpoint, and a DNS
+# record for it".
+#
+# The upside is that reachability becomes per-instance. You can expose the app
+# read pool to one consumer project and keep the analytics pool and the primary
+# somewhere else entirely, which is difficult to express with PSA.
+# ---------------------------------------------------------------------------
+module "psc_endpoint_primary" {
+  source = "../../modules/psc-endpoint"
+
+  project_id = var.project_id
+  region     = var.region
+  name       = "${var.name_prefix}-readscale-primary-psc"
+
+  network_self_link = module.network.network_self_link
+  subnet_self_link  = module.network.subnet_self_link
+
+  service_attachment_link = module.alloydb.psc_service_attachment_link
+
+  create_dns = var.create_psc_dns
+  dns_name   = module.alloydb.psc_dns_name
+}
+
+module "psc_endpoint_read_pool" {
+  source = "../../modules/psc-endpoint"
+
+  for_each = module.alloydb.read_pool_psc_service_attachment_links
+
+  project_id = var.project_id
+  region     = var.region
+  name       = "${var.name_prefix}-readscale-${each.key}-psc"
+
+  network_self_link = module.network.network_self_link
+  subnet_self_link  = module.network.subnet_self_link
+
+  service_attachment_link = each.value
+
+  create_dns = var.create_psc_dns
+  dns_name   = module.alloydb.read_pool_psc_dns_names[each.key]
 }
 
 module "observability" {

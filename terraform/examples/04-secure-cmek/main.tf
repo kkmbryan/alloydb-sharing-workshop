@@ -226,90 +226,38 @@ module "alloydb" {
 }
 
 # ---------------------------------------------------------------------------
-# 5. Consumer-side PSC endpoint
+# 5. Consumer-side PSC endpoint and its DNS
 #
-# With PSC you are responsible for the endpoint and its DNS. This is the part
-# people miss when they move from PSA.
-# ---------------------------------------------------------------------------
-resource "google_compute_address" "psc_endpoint" {
-  name         = "${var.name_prefix}-alloydb-psc-ep"
-  project      = var.project_id
-  region       = var.region
-  subnetwork   = module.network.subnet_self_link
-  address_type = "INTERNAL"
-
-  description = "PSC endpoint IP for the hardened AlloyDB cluster."
-}
-
-resource "google_compute_forwarding_rule" "psc_endpoint" {
-  name    = "${var.name_prefix}-alloydb-psc-ep"
-  project = var.project_id
-  region  = var.region
-  network = module.network.network_self_link
-
-  ip_address = google_compute_address.psc_endpoint.self_link
-  target     = module.alloydb.psc_service_attachment_link
-
-  # Must be the empty string for a PSC endpoint. Any load balancing scheme
-  # value here is rejected.
-  load_balancing_scheme = ""
-}
-
-# ---------------------------------------------------------------------------
-# 6. Private DNS so the AlloyDB-advertised hostname resolves
+# With PSC you are responsible for the endpoint and the record that resolves
+# to it. This is the part people miss when they move over from PSA, so it is
+# factored into a small shared module that every example in this repo uses -
+# see terraform/modules/psc-endpoint.
 #
-# The connectors expect the psc_dns_name to resolve. AlloyDB advertises the
-# name but does not create the record - that is the consumer's job.
+# The endpoint is a regional resource. One per region, per instance.
 # ---------------------------------------------------------------------------
-locals {
-  # psc_dns_name arrives with a trailing dot, e.g.
-  #   <uid>.<region>.alloydb-psc.goog.
-  # The managed zone covers everything after the first label.
-  psc_dns_fqdn = module.alloydb.psc_dns_name
+module "psc_endpoint" {
+  source = "../../modules/psc-endpoint"
 
-  psc_zone_dns_name = local.psc_dns_fqdn == null ? null : join(
-    ".",
-    slice(
-      split(".", local.psc_dns_fqdn),
-      1,
-      length(split(".", local.psc_dns_fqdn))
-    )
-  )
-}
+  project_id = var.project_id
+  region     = var.region
+  name       = "${var.name_prefix}-alloydb-psc-ep"
 
-resource "google_dns_managed_zone" "alloydb_psc" {
-  count = var.create_psc_dns ? 1 : 0
+  network_self_link = module.network.network_self_link
+  subnet_self_link  = module.network.subnet_self_link
 
-  name     = "${var.name_prefix}-alloydb-psc"
-  project  = var.project_id
-  dns_name = local.psc_zone_dns_name
+  service_attachment_link = module.alloydb.psc_service_attachment_link
 
-  visibility = "private"
+  create_dns = var.create_psc_dns
+  dns_name   = module.alloydb.psc_dns_name
 
-  private_visibility_config {
-    networks {
-      network_url = module.network.network_self_link
-    }
+  labels = {
+    env        = "prod"
+    data_class = "confidential"
   }
-
-  description = "Resolves the AlloyDB PSC hostname to this VPC's endpoint IP."
-}
-
-resource "google_dns_record_set" "alloydb_psc" {
-  count = var.create_psc_dns ? 1 : 0
-
-  project      = var.project_id
-  managed_zone = google_dns_managed_zone.alloydb_psc[0].name
-
-  # Already fully qualified with a trailing dot.
-  name    = local.psc_dns_fqdn
-  type    = "A"
-  ttl     = 300
-  rrdatas = [google_compute_address.psc_endpoint.address]
 }
 
 # ---------------------------------------------------------------------------
-# 7. Audit logging
+# 6. Audit logging
 # ---------------------------------------------------------------------------
 resource "google_project_iam_audit_config" "alloydb" {
   project = var.project_id
@@ -349,7 +297,7 @@ resource "google_logging_project_sink" "alloydb_audit" {
 }
 
 # ---------------------------------------------------------------------------
-# 8. Monitoring, including the audit pipeline
+# 7. Monitoring, including the audit pipeline
 # ---------------------------------------------------------------------------
 module "observability" {
   source = "../../modules/observability"

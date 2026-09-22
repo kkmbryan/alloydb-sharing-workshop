@@ -25,27 +25,36 @@ not. Read [`02-prod-ha`](../02-prod-ha/README.md) first for the production basel
 | Resource | Terraform address | Purpose |
 | --- | --- | --- |
 | VPC | `module.network_primary.google_compute_network.this` | Custom-mode VPC `<prefix>-vpc`. **One VPC serves both regions.** |
-| Primary subnet | `module.network_primary.google_compute_subnetwork.app` | `<prefix>-<primary_region>-app` (default `10.50.0.0/24`). |
-| Reserved PSA range | `module.network_primary.google_compute_global_address.psa_range` | `/16` for Private Services Access. **Global to the VPC** — it serves both regions. |
-| Service networking connection | `module.network_primary.google_service_networking_connection.psa` | The single VPC peering both clusters use. |
+| Primary subnet | `module.network_primary.google_compute_subnetwork.app` | `<prefix>-<primary_region>-app` (default `10.50.0.0/24`). Private Google Access on. Hosts client workloads *and* the primary region's PSC endpoint. |
 | Firewall rules ×2 | `module.network_primary` | Allow Postgres 5432/6432 within the primary subnet; logged deny-all at priority 65534. |
-| Secondary subnet | `module.network_secondary.google_compute_subnetwork.app` | `<prefix>-dr-<secondary_region>-app` (default `10.51.0.0/24`), in the **same** VPC (`create_network = false`, `enable_psa = false`). |
+| Secondary subnet | `module.network_secondary.google_compute_subnetwork.app` | `<prefix>-dr-<secondary_region>-app` (default `10.51.0.0/24`), in the **same** VPC (`create_network = false`). Hosts the standby application and the DR region's PSC endpoint. |
 | Firewall rules ×2 | `module.network_secondary` | Same pair, scoped to the secondary subnet CIDR, named with the `<prefix>-dr` prefix. |
-| Primary cluster | `module.alloydb_primary.google_alloydb_cluster.this` | `<prefix>-primary` in `primary_region`. `cluster_type = PRIMARY`, 30 backups, 14-day PITR. |
-| Primary instance | `module.alloydb_primary.google_alloydb_instance.primary` | `<prefix>-primary-primary`. `REGIONAL`, `cpu_count` vCPU (default 4). All writes go here. |
-| Secondary cluster | `module.alloydb_secondary.google_alloydb_cluster.this` | `<prefix>-secondary` in `secondary_region`. `cluster_type = SECONDARY`, `secondary_config.primary_cluster_name` points at the primary. |
-| Secondary instance | `module.alloydb_secondary.google_alloydb_instance.primary` | `<prefix>-secondary-primary`, `instance_type = SECONDARY`. `REGIONAL`, same `cpu_count`. **Read-only until promoted.** |
+| Project lookup | `data.google_project.this` | Supplies this project's **number** for the PSC consumer allow-list. PSC allow-lists take numbers, not IDs. |
+| Primary cluster | `module.alloydb_primary.google_alloydb_cluster.this` | `<prefix>-primary` in `primary_region`. `cluster_type = PRIMARY`, `psc_enabled = true`, 30 backups, 14-day PITR. |
+| Primary instance | `module.alloydb_primary.google_alloydb_instance.primary` | `<prefix>-primary-primary`. `REGIONAL`, `cpu_count` vCPU (default 4). All writes go here. Publishes its own service attachment. |
+| Secondary cluster | `module.alloydb_secondary.google_alloydb_cluster.this` | `<prefix>-secondary` in `secondary_region`. `cluster_type = SECONDARY`, `psc_enabled = true`, `secondary_config.primary_cluster_name` points at the primary. |
+| Secondary instance | `module.alloydb_secondary.google_alloydb_instance.primary` | `<prefix>-secondary-primary`, `instance_type = SECONDARY`. `REGIONAL`, same `cpu_count`. **Read-only until promoted.** Publishes its own, separate service attachment. |
+| PSC endpoint, primary region | `module.psc_endpoint_primary` | `<prefix>-primary-psc`. Reserved internal IP plus forwarding rule in the primary subnet, targeting the primary's service attachment. This is what the application connects through today. |
+| PSC endpoint, DR region | `module.psc_endpoint_secondary` | `<prefix>-secondary-psc`. The same, in the secondary subnet against the secondary's service attachment. Created now, deliberately, rather than during an incident. |
+| Private DNS zones and A records ×2 | `module.psc_endpoint_*.google_dns_*` | *Conditional on `create_psc_dns` (default `false`).* One per endpoint. When false, both records are yours to create — see `psc_dns_records_required`. |
 | Alert policies ×8 (primary) | `module.observability_primary` | CPU, connections, memory, transaction-ID utilisation, storage quota, replication lag, node down, backup staleness. |
 | Alert policies ×8 (secondary) | `module.observability_secondary` | Same set, with a tight replication-lag threshold and the backup-freshness alert neutralised. |
 | Dashboards ×2 | `module.observability_*` | One bundled Cloud Monitoring overview per cluster. |
 
-Outputs: `primary_cluster_name`, `secondary_cluster_name`, `primary_ip_address`,
-`secondary_ip_address`, `total_vcpu_quota`, `dr_runbook`.
+Both network modules are called with `enable_psa = false` and
+`enable_private_google_access = true`: there is no peering to Google's producer network,
+and clients can still reach `googleapis.com` from a private-only host, which the Auth
+Proxy needs.
+
+Outputs: `primary_cluster_name`, `secondary_cluster_name`, `primary_psc_endpoint_ip`,
+`secondary_psc_endpoint_ip`, `psc_dns_records_required`, `total_vcpu_quota`, `dr_runbook`.
 
 > [!TIP]
 > `terraform output dr_runbook` prints the complete switchover and promote procedures with
-> your actual cluster names substituted in. Print it, put it in your incident wiki, and
-> rehearse it — a runbook first read during an outage is not a runbook.
+> your actual cluster names and both endpoint addresses substituted in. Print it, put it in
+> your incident wiki, and rehearse it — a runbook first read during an outage is not a
+> runbook. `terraform output psc_dns_records_required` prints the hostname-to-address map
+> for both regions, which is what you hand to whoever manages DNS.
 
 ---
 
@@ -53,39 +62,44 @@ Outputs: `primary_cluster_name`, `secondary_cluster_name`, `primary_ip_address`,
 
 ```mermaid
 flowchart TB
-  subgraph vpc["One VPC (prefix-vpc) - PSA range is global to the VPC"]
+  subgraph vpc["One VPC (prefix-vpc) - no peering to Google"]
     subgraph r1["Primary region (default us-central1)"]
-      sub1["Subnet 10.50.0.0/24"]
+      sub1["Subnet 10.50.0.0/24<br/>Private Google Access ON"]
       app1["Application<br/>read + write"]
+      ep1["Primary PSC endpoint<br/>module.psc_endpoint_primary"]
+      app1 --> ep1
     end
     subgraph r2["Secondary region (default us-east4)"]
-      sub2["Subnet 10.51.0.0/24"]
+      sub2["Subnet 10.51.0.0/24<br/>Private Google Access ON"]
       app2["Standby application<br/>idle until failover"]
+      ep2["DR PSC endpoint<br/>module.psc_endpoint_secondary"]
+      app2 -.->|"only after promote or switchover"| ep2
     end
-    psa["Reserved PSA range /16<br/>serves BOTH regions"]
   end
 
   subgraph pc["Primary cluster prefix-primary (PRIMARY)"]
     pactive["Active node<br/>zone A"]
     pstandby["Standby node<br/>zone B"]
     pstore[("Regional storage<br/>30 backups, 14-day PITR")]
+    psa1["PSC service attachment"]
     pactive <-->|"RPO 0, automatic failover"| pstandby
     pactive --- pstore
+    pactive --- psa1
   end
 
   subgraph sc["Secondary cluster prefix-secondary (SECONDARY)"]
     sactive["Active node<br/>zone A - READ ONLY"]
     sstandby["Standby node<br/>zone B"]
     sstore[("Regional storage<br/>no backup policy of its own")]
+    psa2["PSC service attachment"]
     sactive <--> sstandby
     sactive --- sstore
+    sactive --- psa2
   end
 
-  app1 -->|"writes"| pactive
-  psa --> pc
-  psa --> sc
+  ep1 -->|"PSC (primary region)"| psa1
+  ep2 -->|"PSC (DR region)"| psa2
   pstore ==>|"continuous ASYNCHRONOUS replication<br/>lag = your RPO"| sstore
-  app2 -.->|"only after promote or switchover"| sactive
 
   lag["Replication lag alert<br/>threshold = agreed RPO"]
   sc -.-> lag
@@ -100,11 +114,13 @@ flowchart TB
 ```bash
 gcloud services enable \
   alloydb.googleapis.com \
-  servicenetworking.googleapis.com \
   compute.googleapis.com \
   monitoring.googleapis.com \
+  dns.googleapis.com \
   --project=YOUR_PROJECT_ID
 ```
+
+*(Note: `dns.googleapis.com` is only required if `create_psc_dns = true`.)*
 
 ### IAM for whoever runs Terraform
 
@@ -114,8 +130,8 @@ not a Google-published list.
 | Role | Needed for |
 | --- | --- |
 | `roles/alloydb.admin` | Both clusters, both instances, and later the `promote`/`switchover` operations |
-| `roles/compute.networkAdmin` | VPC, both subnets, global address, four firewall rules |
-| `roles/servicenetworking.networksAdmin` | The PSA peering |
+| `roles/compute.networkAdmin` | VPC, both subnets, both PSC endpoints, four firewall rules |
+| `roles/dns.admin` | *Conditional on `create_psc_dns`.* Private DNS zones and records |
 | `roles/monitoring.editor` | Sixteen alert policies and two dashboards |
 
 ### Quota to check first
@@ -223,25 +239,38 @@ That is the price. If the business will not pay it, the correct response is to w
 larger RPO and rely on point-in-time recovery instead — not to quietly under-size the
 secondary and hope.
 
-### Why one VPC with two subnets, and no PSA in the secondary region
+### Network topology and why DR requires two regional PSC endpoints
 
-`module.network_secondary` is called with `create_network = false`,
-`existing_network_name = module.network_primary.network_name`, and `enable_psa = false`.
-That looks asymmetric but it is correct: **Private Services Access is per-VPC-per-producer,
-and the reserved range is global to the VPC**, not regional. One peering to
-`servicenetworking.googleapis.com` serves AlloyDB clusters in every region of that VPC.
-Creating a second PSA range and a second peering on the same VPC for the same producer
-would be redundant at best.
+`module.network_primary` creates the VPC and a subnet in the primary region (`10.50.0.0/24`).
+`module.network_secondary` reuses the same VPC (`create_network = false`) and creates a second
+subnet in the DR region (`10.51.0.0/24`). Both network modules have `enable_psa = false` and
+`enable_private_google_access = true`.
 
-The secondary module therefore only contributes a regional subnet (for client workloads and
-for the standby application) and its own pair of firewall rules scoped to that subnet's
-CIDR. Note that the secondary cluster module is passed
-`network_self_link = module.network_primary.network_self_link` and
-`allocated_ip_range = module.network_primary.psa_range_name` — the shared VPC and the
-shared range.
+The critical PSC design point for cross-region DR:
+**A PSC endpoint is a regional resource and targets exactly one service attachment.** It cannot
+span regions and cannot follow a failover. As a result, a two-region deployment requires
+**two permanent endpoints**:
 
-The two subnet CIDRs must not overlap, which is why they are separate variables with
-non-overlapping defaults (`10.50.0.0/24` and `10.51.0.0/24`).
+1. `module.psc_endpoint_primary` in the primary region (`10.50.0.0/24`), targeting the primary
+   cluster's service attachment.
+2. `module.psc_endpoint_secondary` in the DR region (`10.51.0.0/24`), targeting the secondary
+   cluster's service attachment.
+
+**We pre-provision the DR endpoint now, before any incident.** Creating an endpoint while a region
+is experiencing an outage — when Terraform state or cloud control planes may be degraded — is not
+a viable recovery plan. Pre-provisioning costs an internal IP address and ensures that network
+reachability already exists the moment a promote command is issued.
+
+Furthermore, both clusters share the same consumer project allow-list (`psc_allowed_consumer_projects`).
+The allow-list must already contain any project whose workloads will connect after a promote; discovering
+an authorization failure in the middle of a failover adds severe RTO delay.
+
+### If your organisation uses PSA
+
+Private Services Access remains fully supported. With PSA, a single VPC peering to
+`servicenetworking.googleapis.com` and a global `/16` range serve clusters in both regions.
+To use PSA, set `enable_psa = true` on `module.network_primary` and pass `network_self_link`
+plus `allocated_ip_range` to both cluster modules. The choice is permanent at cluster creation.
 
 ### Why the secondary has no initial user, no backup policy, and no continuous backup
 
@@ -500,12 +529,14 @@ gcloud monitoring time-series list --project="$PROJECT" \
   --format='table(resource.labels.instance_id, points[0].value.int64Value)'
 # Milliseconds. Compare against dr_replication_lag_ms_threshold.
 
-# 4. One VPC, one PSA peering, two subnets.
+# 4. One VPC, two regional subnets, two PSC endpoints.
 gcloud compute networks subnets list --project="$PROJECT" \
   --filter='network~alloydb-dr-vpc' \
   --format='table(name,region,ipCidrRange)'
-gcloud compute networks peerings list --network=alloydb-dr-vpc --project="$PROJECT"
-# Expect exactly ONE servicenetworking peering, in state ACTIVE.
+gcloud compute forwarding-rules list --project="$PROJECT" \
+  --filter='name~alloydb-dr-' \
+  --format='table(name,region,IPAddress,pscConnectionStatus)'
+# Expect two endpoints: one in primary_region and one in secondary_region, both ACCEPTED.
 
 # 5. Alert policies on both sides, and confirm the secondary's backup alert is neutralised.
 gcloud alpha monitoring policies list --project="$PROJECT" \
@@ -523,7 +554,7 @@ terraform output dr_runbook
 Confirm the secondary really is read-only, and that data is flowing:
 
 ```sql
--- Against the secondary's IP (terraform output secondary_ip_address):
+-- Against the secondary's endpoint IP (terraform output secondary_psc_endpoint_ip):
 SELECT pg_is_in_recovery();          -- expect t
 CREATE TABLE dr_test (id int);       -- expect an error: read-only
 
@@ -569,10 +600,10 @@ gcloud alloydb clusters delete alloydb-dr-primary \
 ```
 
 > [!TIP]
-> The `google_service_networking_connection` uses `deletion_policy = "ABANDON"`, so the
-> single PSA peering is deliberately left behind. Deleting a service networking connection
-> is the classic way a database stack's destroy hangs, because the producer side still
-> holds resources. The leftover peering is harmless and is reused on the next apply.
+> On the PSC path, there is no service networking VPC peering to leave behind. Both
+> forwarding rules and their reserved addresses are destroyed cleanly with the rest of
+> the stack. If you created DNS records centrally in corporate DNS, remember to clean
+> them up manually.
 
 Confirm both regions are clear:
 
@@ -600,7 +631,7 @@ Related examples:
   Pooling. Layer those onto the primary here for a real deployment.
 - **[`03-read-pool-scaling`](../03-read-pool-scaling/README.md)** — read pools do **not**
   survive a failover and must be recreated on the new primary.
-- **[`04-secure-cmek-psc`](../04-secure-cmek-psc/README.md)** — if you need CMEK with
+- **[`04-secure-cmek`](../04-secure-cmek/README.md)** — if you need CMEK with
   cross-region DR, note that the secondary requires a key in **its own** region with its own
   service-agent grant. This example does not use CMEK.
 

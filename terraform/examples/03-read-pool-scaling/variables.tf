@@ -65,3 +65,32 @@ variable "initial_user_password" {
   type        = string
   sensitive   = true
 }
+
+# ---------------------------------------------------------------------------
+# Private Service Connect
+# ---------------------------------------------------------------------------
+
+variable "psc_allowed_consumer_projects" {
+  description = <<-EOT
+    Project NUMBERS (as strings) permitted to create a PSC endpoint against
+    these instances. Project numbers, not project IDs.
+
+    Leave empty to allow only this project, which is the least-privilege
+    choice. The allow-list applies to the primary and to every read pool.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "create_psc_dns" {
+  description = <<-EOT
+    Whether to create a private Cloud DNS zone and A record for each instance's
+    PSC hostname.
+
+    Defaults to false because most organisations manage DNS centrally. With
+    read pools there is one record per instance, so this is worth planning
+    rather than discovering at connect time.
+  EOT
+  type        = bool
+  default     = false
+}

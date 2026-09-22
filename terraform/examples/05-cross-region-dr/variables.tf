@@ -70,3 +70,33 @@ variable "initial_user_password" {
   type        = string
   sensitive   = true
 }
+
+# ---------------------------------------------------------------------------
+# Private Service Connect
+# ---------------------------------------------------------------------------
+
+variable "psc_allowed_consumer_projects" {
+  description = <<-EOT
+    Project NUMBERS (as strings) permitted to create a PSC endpoint against
+    either cluster. Project numbers, not project IDs.
+
+    Leave empty to allow only this project. The same list is applied to the
+    primary and the secondary: after a promote your application connects to
+    the DR endpoint, so the allow-list has to already permit it.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
+variable "create_psc_dns" {
+  description = <<-EOT
+    Whether to create a private Cloud DNS zone and A record for each cluster's
+    PSC hostname.
+
+    Defaults to false because most organisations manage DNS centrally. For DR
+    specifically, make sure BOTH records exist before you need them - creating
+    the DR record during an incident adds propagation delay to your RTO.
+  EOT
+  type        = bool
+  default     = false
+}

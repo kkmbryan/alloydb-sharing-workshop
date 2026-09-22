@@ -18,7 +18,9 @@ key_rotation_period  = "7776000s" # 90 days
 # Empty means this project only, which is the least-privilege default.
 # psc_allowed_consumer_projects = ["123456789012"]
 
-create_psc_dns = true
+# Leave false if DNS is managed centrally, then create the A record yourself
+# from the psc_endpoint_summary output. Nothing resolves until you do.
+create_psc_dns = false
 
 # Audit classes. Measure log volume before moving to "all".
 pgaudit_log_classes = "ddl,role,write"

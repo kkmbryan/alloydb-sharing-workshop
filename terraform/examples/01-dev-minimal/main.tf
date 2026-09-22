@@ -4,20 +4,26 @@
 # The smallest sensible AlloyDB deployment. Read this one first.
 #
 # What this shows:
-#   * VPC + Private Services Access, which is the prerequisite almost everyone
-#     forgets on their first attempt
+#   * VPC + Private Service Connect, which is the connectivity prerequisite
+#     almost everyone forgets on their first attempt
 #   * a single ZONAL instance - cheapest, no HA
 #   * how the cluster/instance split works
 #
 # What this deliberately does NOT do:
 #   * no HA          -> see 02-prod-ha
 #   * no read pools  -> see 03-read-pool-scaling
-#   * no CMEK or PSC -> see 04-secure-cmek-psc
+#   * no CMEK        -> see 04-secure-cmek
 #   * no monitoring  -> see 02-prod-ha
 #
 # NOT FOR PRODUCTION. A ZONAL instance has no automatic failover and is not
 # covered by the HA SLA.
 # ===========================================================================
+
+# The cluster allow-lists consumer PROJECT NUMBERS, not project IDs, so we look
+# this project's number up rather than asking you to paste it in.
+data "google_project" "this" {
+  project_id = var.project_id
+}
 
 module "network" {
   source = "../../modules/network"
@@ -27,8 +33,13 @@ module "network" {
   name_prefix = var.name_prefix
   subnet_cidr = var.subnet_cidr
 
-  # Private Services Access must exist before the cluster is created.
-  enable_psa = true
+  # PSC does not use Private Services Access, so there is no VPC peering and
+  # no IP range shared with Google's producer network. Every example in this
+  # repo uses PSC - see terraform/examples/README.md for the reasoning.
+  enable_psa = false
+
+  # The Auth Proxy reaches googleapis.com from hosts that have no public IP.
+  enable_private_google_access = true
 }
 
 module "alloydb" {
@@ -38,9 +49,14 @@ module "alloydb" {
   region     = var.region
   cluster_id = "${var.name_prefix}-dev"
 
-  # --- Networking (PSA) ---
-  network_self_link  = module.network.network_self_link
-  allocated_ip_range = module.network.psa_range_name
+  # --- Networking (PSC) ---
+  # The cluster publishes a service attachment and the consumer project creates
+  # an endpoint pointing at it. Note there is no network_self_link here: with
+  # PSC the cluster is not attached to your VPC at all.
+  psc_enabled = true
+  psc_allowed_consumer_projects = length(var.psc_allowed_consumer_projects) > 0 ? (
+    var.psc_allowed_consumer_projects
+  ) : [data.google_project.this.number]
 
   # --- Compute ---
   # 2 vCPU is the smallest generally-available N2 shape.
@@ -122,7 +138,40 @@ module "alloydb" {
     workshop   = "alloydb-operations"
   }
 
-  # The PSA peering must be established before the cluster is created.
-  # Terraform cannot infer this from the network_self_link reference alone.
+  # The subnet must exist before the cluster, and later the endpoint.
   depends_on = [module.network]
+}
+
+# ---------------------------------------------------------------------------
+# Consumer-side PSC endpoint
+#
+# This is the part that catches people moving over from PSA. With PSA, Google
+# hands you a private IP inside your own VPC and you are done. With PSC you
+# create the endpoint yourself: an internal address plus a forwarding rule that
+# targets the cluster's service attachment.
+#
+# The endpoint is a REGIONAL resource, so a multi-region deployment needs one
+# per region - see 05-cross-region-dr.
+# ---------------------------------------------------------------------------
+module "psc_endpoint" {
+  source = "../../modules/psc-endpoint"
+
+  project_id = var.project_id
+  region     = var.region
+  name       = "${var.name_prefix}-dev-psc"
+
+  network_self_link = module.network.network_self_link
+  subnet_self_link  = module.network.subnet_self_link
+
+  service_attachment_link = module.alloydb.psc_service_attachment_link
+
+  # Off by default. If you leave it off, create the A record yourself from the
+  # psc_endpoint output - nothing resolves until you do.
+  create_dns = var.create_psc_dns
+  dns_name   = module.alloydb.psc_dns_name
+
+  labels = {
+    env      = "dev"
+    workshop = "alloydb-operations"
+  }
 }

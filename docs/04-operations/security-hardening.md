@@ -8,7 +8,7 @@
 **Companion document:** [audit-logging-and-siem.md](./audit-logging-and-siem.md)
 covers proving *who did what*. This document covers *stopping them doing it*.
 
-**Reference implementation:** [`terraform/examples/04-secure-cmek-psc/`](../../terraform/examples/04-secure-cmek-psc/)
+**Reference implementation:** [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
 
 ---
 
@@ -45,7 +45,7 @@ production cluster before it holds regulated data.
 
 | # | Control | Why it matters | How to set it | How to verify it |
 |---|---------|----------------|---------------|------------------|
-| 1 | **Private networking chosen deliberately (PSA or PSC)** | Immutable after cluster creation; determines cross-VPC reach and IP consumption forever | `--network=` (PSA) **or** `--enable-private-service-connect` (PSC) at `gcloud alloydb clusters create` | `gcloud alloydb clusters describe CLUSTER --region=R --format="yaml(networkConfig,pscConfig)"` |
+| 1 | **Private Service Connect (PSC) as the networking standard** | Eliminates VPC peering, isolates consumer and producer networks, and enforces explicit project-number allow-listing per instance | `psc_enabled = true` on cluster, `psc_allowed_consumer_projects` on instances | `gcloud alloydb clusters describe CLUSTER --region=R --format="yaml(pscConfig)"` |
 | 2 | **Public IP off on every instance** | Public IP moves the instance from "reachable only inside your VPC" to "reachable from the internet subject to an allowlist" | Omit `enable_public_ip` (defaults off) or set it to `false` | `gcloud alloydb instances list --cluster=C --region=R --format="table(name,networkConfig.enablePublicIp)"` |
 | 3 | **Custom org policy denying public IP** | Defence in depth — stops a future engineer re-enabling it. No predefined constraint exists | `gcloud org-policies set-custom-constraint` (YAML in [Blocking public IP](#blocking-public-ip-for-real)) | `gcloud org-policies list-custom-constraints --organization=ORG_ID` |
 | 4 | **`ssl_mode = ENCRYPTED_ONLY`** | Rejects plaintext connections at the server. This is the default, but assert it explicitly so drift is visible in code review | `--ssl-mode=ENCRYPTED_ONLY` | `gcloud alloydb instances describe I --cluster=C --region=R --format="value(clientConnectionConfig.sslConfig.sslMode)"` |
@@ -72,11 +72,26 @@ production cluster before it holds regulated data.
 
 ## Network isolation
 
-This is the customer's stated priority, so it gets the most detail.
-
 Every AlloyDB cluster must have a private IP interface — it is not optional.
-What you choose is *how* that private interface is plumbed into your VPCs. There
-are exactly two mechanisms and they are mutually exclusive per cluster.
+In this repository, all Terraform examples standardise on **Private Service Connect (PSC)**
+rather than Private Services Access (PSA). For a cybersecurity and network architecture
+review, PSC offers structural security advantages that make it the superior enterprise choice:
+
+1. **Zero VPC peering**: There is no direct peering between your VPC and Google's producer
+   network. This eliminates transitive routing risks, prevents address-space collisions, and
+   means you do not hand a `/16` range to Google's producer network.
+2. **Explicit allow-listing by project number**: Reachability to the database is granted
+   deliberately per consumer project number (`psc_allowed_consumer_projects`). Each entry is
+   an explicit, auditable authorization grant. Consumers not on the list remain permanently
+   unable to establish a connection.
+3. **Per-instance service attachments**: Every AlloyDB instance — the primary and each read pool —
+   publishes its own independent service attachment. Reachability is therefore granular: you can
+   expose a read pool to a BI project without exposing the primary.
+4. **Reinforces private-only access**: Managed Connection Pooling (port 6432) works seamlessly
+   over PSC and is blocked on public IP.
+
+*(For a detailed comparison of PSA versus PSC operational trade-offs, see
+[`terraform/examples/README.md`](../../terraform/examples/README.md).)*
 
 ### Private Services Access vs Private Service Connect
 
@@ -90,7 +105,7 @@ are exactly two mechanisms and they are mutually exclusive per cluster.
 | **DNS responsibility** | Google-managed; the instance gets a private IP you resolve normally | **Yours**, in the manual flow. You create a private DNS zone and an A record pointing at your endpoint IP |
 | **Cost** | Minimal — reuses existing VPC peering | Higher — per-endpoint hourly charge plus data transfer per GiB |
 | **Google's own summary** | "Less secure compared to Private Service Connect due to direct connection" | "More secure due to isolation of consumer and producer VPC" |
-| **Choose when** | Small-scale, single-VPC, cost-sensitive, and you are confident you will never need a second VPC | Multi-VPC or hub-and-spoke, non-RFC1918 clients, or you want producer/consumer isolation as a control |
+| **Standard in this repo** | Supported, but documented as an alternative | **Default standard across all 5 Terraform examples** |
 
 Sources:
 [Private services access overview](https://cloud.google.com/alloydb/docs/about-private-services-access),
@@ -115,18 +130,22 @@ two objects that PSA would have given you for nothing:
 
 1. **The consumer endpoint.** AlloyDB publishes a service attachment URL per
    instance (primary, each read pool, each secondary). You create a forwarding
-   rule in your VPC that targets it. If the consuming project is not listed in
-   the instance's `allowed_consumer_projects`, you can still create the
-   endpoint, but it sits in `PENDING` forever — a genuinely confusing failure
-   mode, because nothing errors.
+   rule in your VPC that targets it (with `load_balancing_scheme = ""`). If the
+   consuming project is not listed in the instance's `allowed_consumer_projects`
+   (which requires **project NUMBERS**, not project IDs), you can still create
+   the endpoint, but it sits in `PENDING` forever — a genuinely confusing
+   failure mode, because nothing errors.
 
 2. **The DNS record.** AlloyDB exposes a suggested DNS name on the instance
-   (`psc_dns_name`, following the convention `....alloydb-psc.goog`), but in the
-   manual flow nothing creates the record for you. You create a private DNS zone
-   in each consuming VPC and point an A record at that VPC's endpoint IP. Use
-   the DNS name rather than raw IPs in connection strings — multiple endpoints
-   in different VPCs map to the same service attachment, and only DNS gives you
-   one connection string that works everywhere.
+   (`psc_dns_name`, following the convention `<uid>.<region>.alloydb-psc.goog.`),
+   but in the manual flow nothing creates the record for you. You create a private
+   DNS zone in each consuming VPC and point an A record at that VPC's endpoint IP.
+   The AlloyDB Auth Proxy (which requires the `--psc` flag) and the language
+   connectors resolve that hostname rather than raw IPs, so **nothing connects
+   until the DNS record exists**.
+
+In Terraform, the consumer-side endpoint and DNS logic are encapsulated in this repository's
+reusable [`terraform/modules/psc-endpoint/`](../../terraform/modules/psc-endpoint/) module.
 
 ```bash
 # 1. Read the service attachment for the instance you want to reach.
@@ -354,12 +373,15 @@ what follows is the security-relevant part of the argument.
 
 ### It reinforces private-only networking
 
-Managed connection pooling is **not supported for public IP connections**. For
-most teams that is a limitation. For a deployment whose first priority is
-private-only networking, it is a structural control: if all application traffic
-goes through the pooler, then all application traffic is by construction on a
-private path. The property is enforced by the platform rather than by a policy
-that someone has to remember to keep enforced.
+Managed connection pooling is **not supported for public IP connections**, and it
+**does** work over Private Service Connect. For most teams the first half of that
+is a limitation. For a deployment whose first priority is private-only
+networking, the pair of facts is a structural control: the pooler is available on
+exactly the topology every example here uses, and unavailable on the one you are
+trying to rule out. If all application traffic goes through the pooler, then all
+application traffic is by construction on a private path. The property is
+enforced by the platform rather than by a policy that someone has to remember to
+keep enforced.
 
 This complements, rather than replaces, the three layers in
 [Blocking public IP for real](#blocking-public-ip-for-real). The custom
@@ -483,9 +505,10 @@ and what you lose:
 
 One more constraint that catches people running cross-region DR: for the primary
 instance in a **Private Service Connect** cluster, connector enforcement is only
-supported when there are **no secondary instances**. If you are planning
-[`terraform/examples/05-cross-region-dr/`](../../terraform/examples/05-cross-region-dr/)
-on a PSC cluster, `require_connectors` is currently off the table for the
+supported when there are **no secondary instances**. Because every example here
+uses PSC, that lands directly on
+[`terraform/examples/05-cross-region-dr/`](../../terraform/examples/05-cross-region-dr/):
+once a secondary exists, `require_connectors` is currently off the table for the
 primary. Verify this against the docs before you design around it, because it is
 the kind of limitation that gets lifted.
 
@@ -1097,7 +1120,7 @@ gcloud alloydb clusters list --project="$PROJECT" --region=- \
   )"
 
 echo
-echo "=== 2. Instances: public IP, SSL mode, connector enforcement, flags ==="
+echo "=== 2. Instances: public IP, SSL mode, connector enforcement, PSC consumers, flags ==="
 gcloud alloydb clusters list --project="$PROJECT" --region=- --format="value(name)" \
 | while IFS= read -r CL; do
     REGION="$(cut -d/ -f4 <<<"$CL")"; CLUSTER="$(cut -d/ -f6 <<<"$CL")"
@@ -1108,6 +1131,7 @@ gcloud alloydb clusters list --project="$PROJECT" --region=- --format="value(nam
         networkConfig.enablePublicIp:label=PUBLIC_IP,
         networkConfig.enableOutboundPublicIp:label=OUTBOUND_IP,
         networkConfig.authorizedExternalNetworks[].cidrRange:label=AUTH_NETS,
+        pscInstanceConfig.allowedConsumerProjects:label=PSC_CONSUMERS,
         clientConnectionConfig.sslConfig.sslMode:label=SSL_MODE,
         clientConnectionConfig.requireConnectors:label=REQ_CONNECTORS,
         databaseFlags:label=FLAGS
@@ -1189,10 +1213,15 @@ SHOW pgaudit.log;
 
 - [audit-logging-and-siem.md](./audit-logging-and-siem.md) — proving coverage:
   Cloud Audit Logs, pgAudit, server logs, and SIEM export
-- [`terraform/examples/04-secure-cmek-psc/`](../../terraform/examples/04-secure-cmek-psc/)
+- [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
   — the reference implementation of this baseline
 - [`terraform/examples/02-prod-ha/`](../../terraform/examples/02-prod-ha/) —
   production HA topology this baseline is normally applied to
+- [`terraform/examples/README.md`](../../terraform/examples/README.md) — why
+  every example standardises on Private Service Connect, and the operational
+  work that comes with it
+- [`terraform/modules/psc-endpoint/`](../../terraform/modules/psc-endpoint/) —
+  the consumer-side endpoint and DNS record, written once rather than per example
 - [maintenance-and-upgrades.md](./maintenance-and-upgrades.md) — restart-inducing
   flag changes (`alloydb.enable_pgaudit`) belong in a maintenance window
 - [monitoring-metrics.md](./monitoring-metrics.md) — metric names and the

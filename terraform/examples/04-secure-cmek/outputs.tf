@@ -15,17 +15,22 @@ output "alloydb_service_agent" {
 
 output "psc_endpoint_ip" {
   description = "Internal IP of the PSC endpoint. This is what clients connect to."
-  value       = google_compute_address.psc_endpoint.address
+  value       = module.psc_endpoint.ip_address
 }
 
 output "psc_dns_name" {
-  description = "Hostname AlloyDB advertises for this instance, mapped to the endpoint IP by the private zone."
+  description = "Hostname AlloyDB advertises for this instance. Must resolve to psc_endpoint_ip."
   value       = module.alloydb.psc_dns_name
 }
 
 output "psc_service_attachment" {
   description = "Producer-side service attachment the forwarding rule targets."
   value       = module.alloydb.psc_service_attachment_link
+}
+
+output "psc_endpoint_summary" {
+  description = "Endpoint details and the connection commands that go with them."
+  value       = module.psc_endpoint.connect_summary
 }
 
 output "audit_sink_writer_identity" {
