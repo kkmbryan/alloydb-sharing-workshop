@@ -62,3 +62,13 @@ __pycache__/
 .venv/
 venv/
 .tflint.d/
+
+# ---------------------------------------------------------------------------
+# Local research notes
+#
+# .research/ holds the raw evidence behind the claims in this repo: API dumps
+# of supported database flags and metric descriptors, plus the curated
+# VERIFIED_FACTS.md. It is working material rather than part of what we publish,
+# so it stays local. See .research/README.md for how to regenerate it.
+# ---------------------------------------------------------------------------
+.research/
