@@ -36,7 +36,7 @@ This runs `terraform fmt -recursive -check` and `terraform init -backend=false` 
 | Required vs optional | Required variables have no `default`; optional ones always do |
 | Resource naming | `${var.name_prefix}-<role>` so one config can be deployed many times |
 | Comments | `#` for prose, placed above the block it explains |
-| Docs | One topic per file under `docs/04-operations/`, linked from the root `README.md` |
+| Docs | One topic per file under `docs/`, linked from the root `README.md` |
 
 ## Keeping the content accurate
 

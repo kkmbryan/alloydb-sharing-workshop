@@ -18,11 +18,11 @@ Everything here is designed to be **copied and adapted**, not deployed as-is.
 | --- | --- |
 | See the smallest working AlloyDB deployment | [`terraform/examples/01-dev-minimal`](terraform/examples/01-dev-minimal) |
 | Copy a production-ready configuration | [`terraform/examples/02-prod-ha`](terraform/examples/02-prod-ha) |
-| Understand the hardened security baseline | [`docs/04-operations/security-hardening.md`](docs/04-operations/security-hardening.md) |
-| Size an instance for a real workload | [`docs/04-operations/sizing-guide.md`](docs/04-operations/sizing-guide.md) |
-| Know what to monitor and alert on | [`docs/04-operations/monitoring-metrics.md`](docs/04-operations/monitoring-metrics.md) |
-| Fix something that is broken right now | [`docs/04-operations/troubleshooting-runbook.md`](docs/04-operations/troubleshooting-runbook.md) |
-| Prove audit coverage to a compliance team | [`docs/04-operations/audit-logging-and-siem.md`](docs/04-operations/audit-logging-and-siem.md) |
+| Understand the hardened security baseline | [`docs/security-hardening.md`](docs/security-hardening.md) |
+| Size an instance for a real workload | [`docs/sizing-guide.md`](docs/sizing-guide.md) |
+| Know what to monitor and alert on | [`docs/monitoring-metrics.md`](docs/monitoring-metrics.md) |
+| Fix something that is broken right now | [`docs/troubleshooting-runbook.md`](docs/troubleshooting-runbook.md) |
+| Prove audit coverage to a compliance team | [`docs/audit-logging-and-siem.md`](docs/audit-logging-and-siem.md) |
 
 ---
 
@@ -30,7 +30,7 @@ Everything here is designed to be **copied and adapted**, not deployed as-is.
 
 ```
 .
-├── docs/04-operations/        Operational guidance — the written material
+├── docs/        Operational guidance — the written material
 ├── terraform/
 │   ├── modules/               Four reusable modules
 │   └── examples/              Five complete, runnable configurations (all on PSC)
@@ -70,13 +70,13 @@ rationale, consumer responsibilities, and guidance if your organisation uses PSA
 
 | Document | Covers |
 | --- | --- |
-| [sizing-guide.md](docs/04-operations/sizing-guide.md) | Machine series, sizing methodology, quota arithmetic, cost drivers |
-| [scaling-playbook.md](docs/04-operations/scaling-playbook.md) | Scale up vs out vs pool vs fix the query — a decision tree |
-| [security-hardening.md](docs/04-operations/security-hardening.md) | Network isolation, CMEK, IAM, SSL, password policy, VPC-SC |
-| [audit-logging-and-siem.md](docs/04-operations/audit-logging-and-siem.md) | Cloud Audit Logs, pgAudit, volume control, SIEM export |
-| [monitoring-metrics.md](docs/04-operations/monitoring-metrics.md) | Metric reference, golden signals, what to alert on |
-| [maintenance-and-upgrades.md](docs/04-operations/maintenance-and-upgrades.md) | Maintenance windows, restart-causing changes, version upgrades |
-| [troubleshooting-runbook.md](docs/04-operations/troubleshooting-runbook.md) | Symptom-driven incident runbooks |
+| [sizing-guide.md](docs/sizing-guide.md) | Machine series, sizing methodology, quota arithmetic, cost drivers |
+| [scaling-playbook.md](docs/scaling-playbook.md) | Scale up vs out vs pool vs fix the query — a decision tree |
+| [security-hardening.md](docs/security-hardening.md) | Network isolation, CMEK, IAM, SSL, password policy, VPC-SC |
+| [audit-logging-and-siem.md](docs/audit-logging-and-siem.md) | Cloud Audit Logs, pgAudit, volume control, SIEM export |
+| [monitoring-metrics.md](docs/monitoring-metrics.md) | Metric reference, golden signals, what to alert on |
+| [maintenance-and-upgrades.md](docs/maintenance-and-upgrades.md) | Maintenance windows, restart-causing changes, version upgrades |
+| [troubleshooting-runbook.md](docs/troubleshooting-runbook.md) | Symptom-driven incident runbooks |
 
 ---
 
@@ -128,18 +128,18 @@ covered in depth in the linked document.
 **1. You size compute, not storage.**
 Storage is regional, disaggregated and grows automatically. There is no disk
 to provision and no disk to run out of — but there *is* a per-cluster storage
-**quota** (16 TiB default, 128 TiB maximum). → [sizing-guide](docs/04-operations/sizing-guide.md)
+**quota** (16 TiB default, 128 TiB maximum). → [sizing-guide](docs/sizing-guide.md)
 
 **2. A regional primary consumes double the vCPU quota.**
 HA means an active node plus a standby, and both count against
 `VCPUsUsedPerProjectPerRegion`. An 8-vCPU HA primary costs 16 vCPUs of quota
-before you add a single read pool node. → [sizing-guide](docs/04-operations/sizing-guide.md)
+before you add a single read pool node. → [sizing-guide](docs/sizing-guide.md)
 
 **3. PSA or PSC is a permanent decision.**
 The private access method is fixed at cluster creation and cannot be changed
 afterwards. This repository standardises on Private Service Connect (PSC) because
 it eliminates VPC peering, prevents address-space collisions, and scopes access
-by project number. Choose deliberately. → [security-hardening](docs/04-operations/security-hardening.md)
+by project number. Choose deliberately. → [security-hardening](docs/security-hardening.md)
 
 **4. Raising `max_connections` is almost always the wrong move.**
 Google's own guidance table plateaus at 5,000 regardless of instance size.
@@ -154,18 +154,18 @@ private-only posture.
 `instance/cpu/maximum_utilization` returns `0.85`, not `85` — even though the
 console renders a percentage and the metric description says "0 to 100". Get
 this wrong in an alert policy and it simply never fires.
-→ [monitoring-metrics](docs/04-operations/monitoring-metrics.md)
+→ [monitoring-metrics](docs/monitoring-metrics.md)
 
 **6. `instance/cpu/utilization` does not exist.**
 It is `average_utilization` or `maximum_utilization`. A wrong metric name
 passes `terraform validate` and then silently does nothing.
-→ [monitoring-metrics](docs/04-operations/monitoring-metrics.md)
+→ [monitoring-metrics](docs/monitoring-metrics.md)
 
 **7. Enabling pgAudit does not enable auditing.**
 `pgaudit.log` defaults to `none`. You must also set it, run
 `CREATE EXTENSION pgaudit` in **each** database, and enable Data Access audit
 logs at the project level. Miss any one and you capture nothing.
-→ [audit-logging-and-siem](docs/04-operations/audit-logging-and-siem.md)
+→ [audit-logging-and-siem](docs/audit-logging-and-siem.md)
 
 **8. `gcloud ... --database-flags` replaces the entire flag set.**
 Any flag you omit reverts to its default. Manage flags declaratively in
@@ -175,7 +175,7 @@ Terraform instead. → [config/database-flags](config/database-flags)
 Routine maintenance, machine type changes and failovers all interrupt
 connections. Applications need reconnect and retry logic with backoff — this
 is a hard requirement, not a nice-to-have.
-→ [maintenance-and-upgrades](docs/04-operations/maintenance-and-upgrades.md)
+→ [maintenance-and-upgrades](docs/maintenance-and-upgrades.md)
 
 **10. Cross-region replication does not protect you from yourself.**
 A bad migration replicates to your DR cluster in seconds. Region failure and

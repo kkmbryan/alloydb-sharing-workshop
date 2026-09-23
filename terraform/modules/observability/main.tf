@@ -22,7 +22,7 @@ locals {
     resource.labels.cluster_id = "${var.cluster_id}"
   EOT
 
-  runbook = "See docs/04-operations/troubleshooting-runbook.md in the workshop repository."
+  runbook = "See docs/troubleshooting-runbook.md in the workshop repository."
 }
 
 # ---------------------------------------------------------------------------
@@ -620,7 +620,7 @@ resource "google_monitoring_alert_policy" "audit_backlog" {
       classes, scoping auditing per role or database, or enabling
       `alloydb.enable_auditlog_volume_reduction`.
 
-      See docs/04-operations/audit-logging-and-siem.md.
+      See docs/audit-logging-and-siem.md.
 
       ${local.runbook}
     EOT

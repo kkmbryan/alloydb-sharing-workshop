@@ -618,11 +618,11 @@ gcloud alloydb clusters list --region=us-east4    --project=YOUR_PROJECT_ID
 
 Operations docs:
 
-- [`docs/04-operations/troubleshooting-runbook.md`](../../../docs/04-operations/troubleshooting-runbook.md) — diagnosing replication lag and stalled secondaries
-- [`docs/04-operations/monitoring-metrics.md`](../../../docs/04-operations/monitoring-metrics.md) — the replication metric family, and the 0–1 fraction trap
-- [`docs/04-operations/maintenance-and-upgrades.md`](../../../docs/04-operations/maintenance-and-upgrades.md) — how maintenance interacts with a replicated pair
-- [`docs/04-operations/sizing-guide.md`](../../../docs/04-operations/sizing-guide.md) — why the secondary's shape is a DR decision, not a cost decision
-- [`docs/04-operations/scaling-playbook.md`](../../../docs/04-operations/scaling-playbook.md)
+- [`docs/troubleshooting-runbook.md`](../../../docs/troubleshooting-runbook.md) — diagnosing replication lag and stalled secondaries
+- [`docs/monitoring-metrics.md`](../../../docs/monitoring-metrics.md) — the replication metric family, and the 0–1 fraction trap
+- [`docs/maintenance-and-upgrades.md`](../../../docs/maintenance-and-upgrades.md) — how maintenance interacts with a replicated pair
+- [`docs/sizing-guide.md`](../../../docs/sizing-guide.md) — why the secondary's shape is a DR decision, not a cost decision
+- [`docs/scaling-playbook.md`](../../../docs/scaling-playbook.md)
 
 Related examples:
 

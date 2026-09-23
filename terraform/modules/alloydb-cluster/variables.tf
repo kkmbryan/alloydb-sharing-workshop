@@ -21,7 +21,7 @@ variable "project_id" {
 # Networking - choose EXACTLY ONE of PSA or PSC
 #
 # This is an architectural decision that CANNOT be changed after the cluster
-# is created. See docs/04-operations/security-hardening.md.
+# is created. See docs/security-hardening.md.
 # ===========================================================================
 
 variable "network_self_link" {
@@ -79,7 +79,7 @@ variable "cpu_count" {
 
     QUOTA NOTE: a primary instance consumes TWO VMs worth of vCPU quota when
     availability_type is REGIONAL (active + standby). Budget accordingly - see
-    docs/04-operations/sizing-guide.md.
+    docs/sizing-guide.md.
   EOT
   type        = number
   default     = 2

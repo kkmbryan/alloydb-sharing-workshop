@@ -287,7 +287,7 @@ Source: [Configure adaptive autovacuum](https://cloud.google.com/alloydb/docs/ad
 | HA failover (automatic or manual) | **Yes** | Standby is promoted; all connections to the old primary die |
 | Major version upgrade | **Yes**, extended | Writes unavailable — see [Section 7](#7-major-version-upgrades) |
 | Adding or removing read pool nodes | Affects the pool | Existing connections to removed nodes drop |
-| Enabling [Managed Connection Pooling](../../config/connection-pooling/managed-connection-pooling.md) | Verify before assuming | We could not confirm this either way; test on a clone before scheduling |
+| Enabling [Managed Connection Pooling](../config/connection-pooling/managed-connection-pooling.md) | Verify before assuming | We could not confirm this either way; test on a clone before scheduling |
 | Rotating a user password | No | |
 | Granting or revoking IAM roles | No | |
 | Changing `authorized_external_networks` | No restart, but connectivity changes | |
@@ -323,7 +323,7 @@ off by default.
 **2. `maxLifetime` must be shorter than any infrastructure idle timeout, and must have
 jitter.** This is the setting that rotates your pool onto the new backend after a swap,
 and it is already specified for each language in
-[app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md):
+[app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md):
 
 | Runtime | Setting | Value in the pool-sizing guide |
 | --- | --- | --- |
@@ -614,7 +614,7 @@ machine type change, self-service maintenance, or a major version upgrade.
 - [ ] **Reconnection behaviour is proven**, not assumed — a failover test on a
       non-production HA instance within the last quarter.
 - [ ] **Pool `maxLifetime` and jitter** verified against
-      [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md).
+      [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md).
 - [ ] **Backups verified fresh.** `cluster/last_backup_timestamp` is current, and the
       backup-stale alert is not suppressed. Note the restore RTO, not just that a
       backup exists.
@@ -703,10 +703,10 @@ Steps: <...>
 | Which metric confirms the change worked | [monitoring-metrics.md](./monitoring-metrics.md) |
 | It went wrong and I need to triage | [troubleshooting-runbook.md](./troubleshooting-runbook.md) |
 | Capacity and machine shape | [sizing-guide.md](./sizing-guide.md) |
-| Pool settings that survive a restart | [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md) |
-| Managed connection pooling configuration | [managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md) |
-| Connection census before a change | [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql) |
-| Alert policies to arm or silence | [terraform/modules/observability/](../../terraform/modules/observability/) |
+| Pool settings that survive a restart | [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md) |
+| Managed connection pooling configuration | [managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md) |
+| Connection census before a change | [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql) |
+| Alert policies to arm or silence | [terraform/modules/observability/](../terraform/modules/observability/) |
 
 ---
 

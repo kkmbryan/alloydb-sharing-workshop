@@ -218,5 +218,5 @@ many sessions in `LWLock` waits, or memory pressure on the instance.
 
 ---
 
-*See also: [scaling-playbook.md](../../docs/04-operations/scaling-playbook.md) ·
-[sizing-guide.md](../../docs/04-operations/sizing-guide.md)*
+*See also: [scaling-playbook.md](../../docs/scaling-playbook.md) ·
+[sizing-guide.md](../../docs/sizing-guide.md)*

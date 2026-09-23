@@ -268,13 +268,13 @@ The audit point deserves emphasis for a security audience. When an external
 pooler multiplexes many application users onto a few database connections, the
 identity that reaches PostgreSQL is the pooler's, not the end user's. That
 weakens exactly the attribution that
-[audit-logging-and-siem.md](../../docs/04-operations/audit-logging-and-siem.md)
+[audit-logging-and-siem.md](../../docs/audit-logging-and-siem.md)
 depends on.
 
 The public IP point is worth stating plainly too: because managed connection
 pooling cannot be used over a public IP, adopting it reinforces the
 private-only networking posture described in
-[security-hardening.md](../../docs/04-operations/security-hardening.md).
+[security-hardening.md](../../docs/security-hardening.md).
 
 ---
 
@@ -282,7 +282,7 @@ private-only networking posture described in
 
 - [app-side-pool-sizing.md](app-side-pool-sizing.md) — sizing the pool inside
   your application, which complements rather than replaces this
-- [scaling-playbook.md](../../docs/04-operations/scaling-playbook.md) — when
+- [scaling-playbook.md](../../docs/scaling-playbook.md) — when
   pooling is the right answer versus scaling up or out
 - [Managed connection pooling](https://cloud.google.com/alloydb/docs/configure-managed-connection-pooling)
   — official documentation

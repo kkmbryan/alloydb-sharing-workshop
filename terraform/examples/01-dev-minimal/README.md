@@ -466,10 +466,10 @@ gcloud alloydb clusters list --region=us-central1 --project=YOUR_PROJECT_ID
 
 Operations docs:
 
-- [`docs/04-operations/sizing-guide.md`](../../../docs/04-operations/sizing-guide.md) — how to pick a shape, and why `ZONAL` vs `REGIONAL` changes your quota maths
-- [`docs/04-operations/monitoring-metrics.md`](../../../docs/04-operations/monitoring-metrics.md) — the metrics that actually exist, and the 0–1 fraction trap
-- [`docs/04-operations/security-hardening.md`](../../../docs/04-operations/security-hardening.md) — what this example deliberately leaves off
-- [`docs/04-operations/troubleshooting-runbook.md`](../../../docs/04-operations/troubleshooting-runbook.md) — start here when the cluster create fails
+- [`docs/sizing-guide.md`](../../../docs/sizing-guide.md) — how to pick a shape, and why `ZONAL` vs `REGIONAL` changes your quota maths
+- [`docs/monitoring-metrics.md`](../../../docs/monitoring-metrics.md) — the metrics that actually exist, and the 0–1 fraction trap
+- [`docs/security-hardening.md`](../../../docs/security-hardening.md) — what this example deliberately leaves off
+- [`docs/troubleshooting-runbook.md`](../../../docs/troubleshooting-runbook.md) — start here when the cluster create fails
 
 Related configuration:
 

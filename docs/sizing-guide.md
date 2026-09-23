@@ -147,14 +147,14 @@ one patch window, and ideally one marketing event. Capture:
 | **Total database size and 12-month growth rate** | Feeds the storage-quota decision, not the machine decision | `pg_database_size()` trended over time |
 | **Peak concurrent connections, and peak *active* connections** | These are different numbers and the gap tells you whether you need a pooler | `pg_stat_activity` sampled every 10 s, grouped by `state` |
 | **Peak read and write IOPS, and write throughput (MB/s)** | Sanity-check against series choice; heavy sustained write is a C4/Z3 signal | OS-level or cloud provider disk metrics |
-| **Cache hit ratio per top query** | Below ~95% on a hot query means the working set does not fit in RAM | Query A in [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql) |
-| **Top 20 queries by total execution time** | Establishes the "fix the query first" baseline before you buy hardware | [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql) |
+| **Cache hit ratio per top query** | Below ~95% on a hot query means the working set does not fit in RAM | Query A in [01_top_queries.sql](../monitoring/sql/01_top_queries.sql) |
+| **Top 20 queries by total execution time** | Establishes the "fix the query first" baseline before you buy hardware | [01_top_queries.sql](../monitoring/sql/01_top_queries.sql) |
 
 > [!TIP]
 > Sample `pg_stat_activity` on a timer and store it. A single point-in-time
 > `SELECT count(*) FROM pg_stat_activity` taken during a quiet afternoon is the most
 > common source of undersized connection planning. Query B in
-> [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql)
+> [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql)
 > gives you the census grouped by `application_name`.
 
 ### Step 2 — Convert observations into a starting shape
@@ -179,10 +179,10 @@ than accept a permanently cold cache.
 **c. Cross-check against connections.**
 A database can only genuinely execute as many queries concurrently as it has cores.
 The house rule used throughout this repo is **2–4 concurrent server connections per
-vCPU** — see [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md).
+vCPU** — see [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md).
 If your measured peak *active* connections is wildly above 4x your candidate vCPU
 count, the answer is a connection pooler rather than a bigger machine. On AlloyDB that
-means [managed connection pooling](../../config/connection-pooling/managed-connection-pooling.md),
+means [managed connection pooling](../config/connection-pooling/managed-connection-pooling.md),
 which is part of the instance and needs no compute of its own.
 
 **d. Choose the series.** Default to N2. Move to C4A for price/performance if Arm is
@@ -231,7 +231,7 @@ someone copied from a blog post, that dashboard is showing you nothing.
 | --- | --- | --- | --- | --- | --- |
 | **Small internal app / sandbox** | C4A 1–2 vCPU, or N2 2 vCPU | No — use a basic instance | None | Off | A [basic instance](https://cloud.google.com/alloydb/docs/basic-instance) has a single node and no standby, which halves the vCPU quota cost. Non-production only. |
 | **Departmental OLTP** | N2 4–8 vCPU | Yes | 0–2 nodes for reporting | Off | The commonest real case. Put reporting on a read pool early so a bad report cannot take down the app. |
-| **High-throughput OLTP** | C4A or N2 16–32 vCPU | Yes | 2+ nodes | Off | Plan for connection pooling from the start at this size — see [managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md). |
+| **High-throughput OLTP** | C4A or N2 16–32 vCPU | Yes | 2+ nodes | Off | Plan for connection pooling from the start at this size — see [managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md). |
 | **Mixed HTAP** | N2 or C4 32+ vCPU, sized for **two** working sets | Yes | 2+ nodes | **On** | See section 8 — columnar memory is carved out of the same RAM as the buffer cache. |
 | **Read-heavy (read:write ≫ 10:1)** | Keep the primary modest, e.g. N2 8–16 vCPU | Yes | 4+ nodes, scale horizontally | Optional | Spend on read nodes rather than on a giant primary. Mind the 20-node cluster budget. |
 
@@ -498,7 +498,7 @@ Comparing the two CPU metrics tells you something a single utilisation number ca
 | --- | --- | --- |
 | average low, maximum low | Over-provisioned | Scale down (section 10 of [scaling-playbook.md](./scaling-playbook.md#9-scaling-down-and-cost-control)) |
 | average high, maximum high | Genuinely CPU-bound across the board | Scale up, **after** checking the top queries |
-| average **low**, maximum **high** | Serialised work — one hot core. Usually a single expensive query, a lock convoy, or a single-threaded background job | Scaling up adds cores this workload cannot use, so start with [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql) instead |
+| average **low**, maximum **high** | Serialised work — one hot core. Usually a single expensive query, a lock convoy, or a single-threaded background job | Scaling up adds cores this workload cannot use, so start with [01_top_queries.sql](../monitoring/sql/01_top_queries.sql) instead |
 | average high, memory low, hit rate falling | Working set no longer fits | Scale up for RAM, or reduce the working set with better indexes |
 
 That third row is the money one. It is the case where scaling up costs you money and
@@ -537,11 +537,11 @@ cross-check against your own analysis — not as a replacement for it.
 ## Where to go next
 
 - **"It's slow right now"** → [scaling-playbook.md](./scaling-playbook.md)
-- **Application pool settings** → [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md)
-- **Managed connection pooling** → [managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md)
-- **Finding the expensive queries** → [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql)
-- **Connection and lock census** → [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql)
-- **Vacuum and bloat** → [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql)
+- **Application pool settings** → [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md)
+- **Managed connection pooling** → [managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md)
+- **Finding the expensive queries** → [01_top_queries.sql](../monitoring/sql/01_top_queries.sql)
+- **Connection and lock census** → [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql)
+- **Vacuum and bloat** → [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql)
 
 ---
 

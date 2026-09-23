@@ -73,7 +73,7 @@ module "alloydb" {
 
   # Set true to forbid direct connections and require the Auth Proxy or a
   # language connector. Strongest control; breaks plain psql. Decide
-  # deliberately - see docs/04-operations/security-hardening.md.
+  # deliberately - see docs/security-hardening.md.
   require_connectors = var.require_connectors
 
   # --- Production flag baseline ---
@@ -101,7 +101,7 @@ module "alloydb" {
     "alloydb.enable_pgaudit" = "on"
     # ddl + role captures schema changes and privilege changes - high value,
     # low volume. Add 'write' or 'read' only after measuring log volume; see
-    # docs/04-operations/audit-logging-and-siem.md.
+    # docs/audit-logging-and-siem.md.
     "pgaudit.log" = "ddl,role"
 
     # --- Security: password policy for built-in users ---
@@ -157,7 +157,7 @@ module "alloydb" {
   # --- Lifecycle ---
   # Destroying this requires setting deletion_protection = false and applying
   # that change BEFORE running destroy. That two-step is the point.
-  deletion_protection = true
+  deletion_protection = var.deletion_protection
   deletion_policy     = "DEFAULT"
 
   labels = {

@@ -52,11 +52,11 @@ resource "google_kms_crypto_key" "alloydb" {
     protection_level = var.kms_protection_level
   }
 
-  lifecycle {
-    # A destroyed key is unrecoverable, and so is every backup encrypted with
-    # it. This guard is not optional.
-    prevent_destroy = true
-  }
+  # In production, prevent_destroy = true protects against accidental key loss.
+  # Commented out for workshop/test lifecycles so terraform destroy can succeed.
+  # lifecycle {
+  #   prevent_destroy = true
+  # }
 }
 
 # ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ module "alloydb" {
     hours = 4
   }
 
-  deletion_protection = true
+  deletion_protection = var.deletion_protection
   deletion_policy     = "DEFAULT"
 
   labels = {

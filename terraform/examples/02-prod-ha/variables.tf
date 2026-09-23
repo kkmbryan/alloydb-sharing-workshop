@@ -107,7 +107,7 @@ variable "enable_data_access_logs" {
     Enable Data Access audit logs for the AlloyDB API.
 
     Required for pgAudit records to be delivered. These logs are billable and
-    can be high volume - see docs/04-operations/audit-logging-and-siem.md for
+    can be high volume - see docs/audit-logging-and-siem.md for
     cost control.
   EOT
   type        = bool
@@ -118,4 +118,10 @@ variable "alert_email" {
   description = "Email address for alert notifications. Null creates the policies without a notification channel."
   type        = string
   default     = null
+}
+
+variable "deletion_protection" {
+  description = "Whether to prevent Terraform from destroying the cluster. Set false before running destroy."
+  type        = bool
+  default     = true
 }

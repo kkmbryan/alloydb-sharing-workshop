@@ -15,7 +15,7 @@
 -- ---------------------------------------------------------------------------
 -- A. Transaction ID wraparound headroom.
 --    Warn above 0.2, page above 0.4. The metric is a fraction (0-1), not a
---    percentage; see docs/04-operations/monitoring-metrics.md.
+--    percentage; see docs/monitoring-metrics.md.
 -- ---------------------------------------------------------------------------
 SELECT
     datname                                              AS database,

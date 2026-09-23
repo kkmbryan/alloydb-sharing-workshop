@@ -141,3 +141,10 @@ variable "audit_sink_destination" {
   type        = string
   default     = null
 }
+
+variable "deletion_protection" {
+  description = "Whether to prevent Terraform from destroying the cluster. Set false before running destroy."
+  type        = bool
+  default     = true
+}
+

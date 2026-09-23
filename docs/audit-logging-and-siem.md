@@ -9,7 +9,7 @@
 **Companion document:** [security-hardening.md](./security-hardening.md) covers
 the preventive controls. This one covers the detective controls.
 
-**Reference implementation:** [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
+**Reference implementation:** [`terraform/examples/04-secure-cmek/`](../terraform/examples/04-secure-cmek/)
 
 ---
 
@@ -83,7 +83,7 @@ inside the managed instance rather than in front of it, adds no credential
 store of its own, and is not supported over public IP — which means adopting it
 also reinforces a private-only network posture. Configuration, pool modes and
 the transaction-mode compatibility list are in
-[`config/connection-pooling/managed-connection-pooling.md`](../../config/connection-pooling/managed-connection-pooling.md);
+[`config/connection-pooling/managed-connection-pooling.md`](../config/connection-pooling/managed-connection-pooling.md);
 the security framing is in
 [security-hardening.md](./security-hardening.md#connection-pooling-as-a-security-control).
 
@@ -466,7 +466,7 @@ Two useful flags, both settable and neither requiring a restart:
 | Flag | Range | Use |
 |------|-------|-----|
 | `log_min_duration_statement` | −1 – 2147483647 | Log statements slower than N ms. `-1` disables; `0` logs everything (do not do that in production) |
-| `statement_timeout` | 0 – 2147483647 | Not a logging control, but it bounds the damage a runaway query does. Pairs with the analysis in [`monitoring/sql/01_top_queries.sql`](../../monitoring/sql/01_top_queries.sql) |
+| `statement_timeout` | 0 – 2147483647 | Not a logging control, but it bounds the damage a runaway query does. Pairs with the analysis in [`monitoring/sql/01_top_queries.sql`](../monitoring/sql/01_top_queries.sql) |
 
 > [!TIP]
 > Failed authentications only appear in Layer 3. They are not Cloud Audit Log
@@ -1088,20 +1088,20 @@ the room and the one most teams cannot answer.
 
 - [security-hardening.md](./security-hardening.md) — the preventive baseline
   these logs are evidence for
-- [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
+- [`terraform/examples/04-secure-cmek/`](../terraform/examples/04-secure-cmek/)
   — reference implementation including audit configuration
 - [monitoring-metrics.md](./monitoring-metrics.md) — the metric catalogue,
   including the `node/database/logging/audit/*` family used above
 - [troubleshooting-runbook.md](./troubleshooting-runbook.md) — what to do when
   the backlog alert fires
-- [`monitoring/sql/02_connections_and_locks.sql`](../../monitoring/sql/02_connections_and_locks.sql)
+- [`monitoring/sql/02_connections_and_locks.sql`](../monitoring/sql/02_connections_and_locks.sql)
   — live session inspection, complementary to the audit trail
-- [`monitoring/sql/01_top_queries.sql`](../../monitoring/sql/01_top_queries.sql)
+- [`monitoring/sql/01_top_queries.sql`](../monitoring/sql/01_top_queries.sql)
   — statement-level analysis; useful for estimating pgAudit volume before you
   enable it
-- [`config/connection-pooling/managed-connection-pooling.md`](../../config/connection-pooling/managed-connection-pooling.md)
+- [`config/connection-pooling/managed-connection-pooling.md`](../config/connection-pooling/managed-connection-pooling.md)
   — the pooling approach that preserves the database identity pgAudit records
-- [`config/connection-pooling/app-side-pool-sizing.md`](../../config/connection-pooling/app-side-pool-sizing.md)
+- [`config/connection-pooling/app-side-pool-sizing.md`](../config/connection-pooling/app-side-pool-sizing.md)
   — connection churn drives audit volume more than most people expect
 
 ---

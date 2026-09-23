@@ -498,10 +498,10 @@ gcloud alloydb clusters list --region=us-central1 --project=YOUR_PROJECT_ID
 
 Operations docs:
 
-- [`docs/04-operations/scaling-playbook.md`](../../../docs/04-operations/scaling-playbook.md) — when to add nodes, when to add a pool, and when to fix the query instead
-- [`docs/04-operations/sizing-guide.md`](../../../docs/04-operations/sizing-guide.md) — choosing node shapes and the vCPU quota maths
-- [`docs/04-operations/monitoring-metrics.md`](../../../docs/04-operations/monitoring-metrics.md) — replication lag, cache hit rate, and the 0–1 fraction trap
-- [`docs/04-operations/troubleshooting-runbook.md`](../../../docs/04-operations/troubleshooting-runbook.md) — diagnosing a lagging or saturated read pool
+- [`docs/scaling-playbook.md`](../../../docs/scaling-playbook.md) — when to add nodes, when to add a pool, and when to fix the query instead
+- [`docs/sizing-guide.md`](../../../docs/sizing-guide.md) — choosing node shapes and the vCPU quota maths
+- [`docs/monitoring-metrics.md`](../../../docs/monitoring-metrics.md) — replication lag, cache hit rate, and the 0–1 fraction trap
+- [`docs/troubleshooting-runbook.md`](../../../docs/troubleshooting-runbook.md) — diagnosing a lagging or saturated read pool
 
 Related configuration:
 

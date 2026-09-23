@@ -144,7 +144,7 @@ a quarter if you miss them.
 
 | Risk | Metric | Ground truth in SQL |
 | --- | --- | --- |
-| Transaction ID wraparound | `database/postgresql/vacuum/transaction_id_utilization` (DOUBLE, fraction) | Query **A** in [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql) |
+| Transaction ID wraparound | `database/postgresql/vacuum/transaction_id_utilization` (DOUBLE, fraction) | Query **A** in [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql) |
 | Vacuum horizon pinned | `database/postgresql/vacuum/oldest_transaction_age` (label `type`: `running`, `prepared`, `replication_slot`, `replica`) | Query **C** in the same file |
 | Read pool staleness | `instance/postgres/replication/maximum_lag` (ms) | — |
 | Cross-region DR staleness | `instance/postgres/replication/maximum_secondary_lag` (ms) | — |
@@ -165,7 +165,7 @@ where healthy PostgreSQL steady state sits. No other reading of the number produ
 sensible result, so write thresholds as fractions.
 
 The thresholds implemented in
-[terraform/modules/observability/variables.tf](../../terraform/modules/observability/variables.tf)
+[terraform/modules/observability/variables.tf](../terraform/modules/observability/variables.tf)
 are **0.2 for a warning and 0.4 for a page**. The reasoning is worth understanding
 rather than copying:
 
@@ -219,7 +219,7 @@ rewrites tables and takes locks while doing so, so test it on a clone first.
 > Keep `log_autovacuum_min_duration` set to a sensible value. Adaptive autovacuum
 > writes its blocker warnings to the postgres log, and that log is the first place to
 > look when this metric starts climbing. The annotated flag set lives in
-> [config/database-flags/production-oltp.env](../../config/database-flags/production-oltp.env).
+> [config/database-flags/production-oltp.env](../config/database-flags/production-oltp.env).
 
 ---
 
@@ -365,7 +365,7 @@ fetch alloydb.googleapis.com/Cluster
 ```
 
 The implemented version of this is in
-[terraform/modules/observability/main.tf](../../terraform/modules/observability/main.tf)
+[terraform/modules/observability/main.tf](../terraform/modules/observability/main.tf)
 as the `backup_stale` policy.
 
 > [!TIP]
@@ -407,7 +407,7 @@ condition_threshold {
 ```
 
 When this fires, go straight to query **E** in
-[02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql),
+[02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql),
 which lists long-running and idle-in-transaction sessions with `transaction_age`,
 `application_name` and `client_addr`. Query **B** in the same file gives you the
 connection census grouped by application, which is how you identify the responsible
@@ -421,7 +421,7 @@ outage into a bounded application error.
 `instance/postgresql/backends_for_top_applications` (label `application_name`) is the
 metric equivalent of query B — but it only works if every pool sets
 `application_name`, which is exactly why
-[app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md)
+[app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md)
 insists on it in every language example.
 
 ---
@@ -517,9 +517,9 @@ Enablement in this repository goes through the `alloydb-cluster` module's
 `connection_pool_config` block on `google_alloydb_instance` (`enabled` is required;
 `flags` is a `map(string)` where you drop the `connection-pooling-` prefix and use
 underscores, so `connection-pooling-pool-mode` becomes `pool_mode`). A worked example
-lives in [terraform/examples/02-prod-ha](../../terraform/examples/02-prod-ha), and the
+lives in [terraform/examples/02-prod-ha](../terraform/examples/02-prod-ha), and the
 full flag reference — including the transaction-mode compatibility checklist — is in
-[managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md).
+[managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md).
 
 ---
 
@@ -675,7 +675,7 @@ Related flags worth knowing, all confirmed settable:
 
 > [!TIP]
 > `pg_stat_statements` is available by default on AlloyDB, which is why
-> [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql) can assume it. Verify
+> [01_top_queries.sql](../monitoring/sql/01_top_queries.sql) can assume it. Verify
 > per database with `SELECT * FROM pg_extension WHERE extname = 'pg_stat_statements';`
 > — the extension must be created in **each** database, not just once per instance.
 
@@ -685,7 +685,7 @@ Related flags worth knowing, all confirmed settable:
 
 > [!IMPORTANT]
 > **Google publishes no official numeric alerting thresholds for AlloyDB.** Every
-> number in [terraform/modules/observability/variables.tf](../../terraform/modules/observability/variables.tf),
+> number in [terraform/modules/observability/variables.tf](../terraform/modules/observability/variables.tf),
 > in `monitoring/alerts/`, and in this document is a **calibrated starting point
 > chosen by us**, not a vendor recommendation. Treat them as a hypothesis. Run them in
 > notification-only mode against at least two weeks of your own baseline — including a
@@ -712,16 +712,16 @@ Calibration procedure that works:
 
 | What | Where |
 | --- | --- |
-| Terraform alert policies + dashboard | [terraform/modules/observability/](../../terraform/modules/observability/) |
+| Terraform alert policies + dashboard | [terraform/modules/observability/](../terraform/modules/observability/) |
 | Standalone alert definitions | `monitoring/alerts/` |
-| Importable console dashboards | [monitoring/dashboards/](../../monitoring/dashboards/) |
-| In-database diagnostics — slow queries | [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql) |
-| In-database diagnostics — connections and locks | [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql) |
-| In-database diagnostics — vacuum, bloat, wraparound | [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql) |
+| Importable console dashboards | [monitoring/dashboards/](../monitoring/dashboards/) |
+| In-database diagnostics — slow queries | [01_top_queries.sql](../monitoring/sql/01_top_queries.sql) |
+| In-database diagnostics — connections and locks | [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql) |
+| In-database diagnostics — vacuum, bloat, wraparound | [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql) |
 | Incident response | [troubleshooting-runbook.md](./troubleshooting-runbook.md) |
 | Restarts and change windows | [maintenance-and-upgrades.md](./maintenance-and-upgrades.md) |
 | Capacity | [sizing-guide.md](./sizing-guide.md) |
-| Connection pooling | [managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md) |
+| Connection pooling | [managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md) |
 
 ---
 
@@ -855,7 +855,7 @@ Resource-type column values are short names of `alloydb.googleapis.com/<Type>`.
 
 > [!TIP]
 > `database/postgresql/tuples` with `state="dead"` is the Cloud Monitoring view of
-> query **D** in [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql).
+> query **D** in [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql).
 > Its description notes it is *"only exposed when the number of db's is less than 50"* —
 > so on a heavily multi-tenant cluster it disappears, and the SQL becomes your only
 > option.

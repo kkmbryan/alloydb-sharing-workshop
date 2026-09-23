@@ -3,7 +3,7 @@
 # verify-security-posture.sh
 #
 # Read-only audit of an AlloyDB cluster against the hardened baseline in
-# docs/04-operations/security-hardening.md.
+# docs/security-hardening.md.
 #
 # Makes NO changes. Safe to run against production, and safe to hand to an
 # auditor who has only viewer access.
@@ -322,7 +322,7 @@ printf "\n${BOLD}Summary${NC}\n"
 printf "  ${GREEN}pass %d${NC}   ${YELLOW}warn %d${NC}   ${RED}fail %d${NC}\n" "$PASS" "$WARN" "$FAIL"
 printf "\nThis script checks configuration, not effectiveness. It cannot tell you\n"
 printf "whether your SQL GRANTs follow least privilege, or whether anyone reads\n"
-printf "the audit logs. See docs/04-operations/security-hardening.md.\n"
+printf "the audit logs. See docs/security-hardening.md.\n"
 
 [[ $FAIL -gt 0 ]] && exit 1
 exit 0

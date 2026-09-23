@@ -66,7 +66,7 @@ CONCURRENTLY` does not. The cheap fix is also the lower-blast-radius fix.
 ### Step 1: find the expensive queries
 
 Run query **A** in
-[01_top_queries.sql](../../monitoring/sql/01_top_queries.sql). Sort by
+[01_top_queries.sql](../monitoring/sql/01_top_queries.sql). Sort by
 `total_exec_time`, not `mean_exec_time` — a 5 ms query executed two million times is a
 bigger problem than a nine-second report that runs twice a day.
 
@@ -108,14 +108,14 @@ SELECT * FROM google_db_advisor_recommend_indexes();
 > The index advisor recommends; it does not know your write path. Every index you add
 > is a write amplification tax on every `INSERT`, `UPDATE` and `DELETE` touching that
 > table, plus storage, plus vacuum work. Review recommendations against
-> [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql) before
+> [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql) before
 > applying a batch of them. Create indexes with `CONCURRENTLY` in production.
 
 ### Step 3: rule out locking
 
 If queries are slow but CPU is low, you may be looking at lock contention rather than
 resource exhaustion. Use
-[02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql),
+[02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql),
 and check `instance/postgresql/deadlock_count` (a DELTA metric — it does exist,
 despite what some summaries claim) and
 `instance/postgresql/wait_count` / `wait_time`.
@@ -220,7 +220,7 @@ scaling, not a nice-to-have.** Specifically:
 
 - Every pool must set a **maximum connection lifetime** so it rotates onto the new
   backend rather than clinging to dead sockets. See
-  [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md)
+  [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md)
   for the per-language settings.
 - Retries need **exponential backoff with jitter**. Without jitter, every pod in your
   fleet reconnects at the same instant and you convert a one-minute blip into a
@@ -271,7 +271,7 @@ application depends on. Managed connection pooling reinforces that separation:
 `max_pool_size` applies **per user and database pair**, so giving reporting its own
 database role bounds the server connections that workload can occupy independently of
 the application's — see
-[managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md#configuration-reference).
+[managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md#configuration-reference).
 
 ### More nodes, or bigger nodes?
 
@@ -372,14 +372,14 @@ flowchart LR
 
 | Layer | Job | Sized by | Where it is configured |
 | --- | --- | --- | --- |
-| **App-side pool** | Bound how many connections *one process* can open | 2–4x vCPU ÷ number of app instances at max autoscale | [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md) |
-| **Pooler** | Multiplex thousands of client connections onto few server connections | Server pool ≈ 2–4x primary vCPU | [managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md) |
+| **App-side pool** | Bound how many connections *one process* can open | 2–4x vCPU ÷ number of app instances at max autoscale | [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md) |
+| **Pooler** | Multiplex thousands of client connections onto few server connections | Server pool ≈ 2–4x primary vCPU | [managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md) |
 | **AlloyDB** | Execute queries | `max_connections` as a *backstop*, not a capacity plan | Database flag |
 
 The capacity arithmetic — max pool size × app instances at maximum autoscale, plus
 batch jobs, plus migration tooling, plus BI, plus monitoring agents, plus humans with
 a `psql` open — is set out in
-[app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md#the-capacity-arithmetic).
+[app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md#the-capacity-arithmetic).
 Do that sum before you change anything else. It is the check almost nobody does.
 
 ### Is this your problem? Two-minute diagnosis
@@ -414,7 +414,7 @@ AlloyDB has a pooler built into the service. This is the pooling layer we recomm
 for this deployment: there is no VM fleet to run, no second credential store, and no
 extra TLS termination point to rotate. The full reference — every flag, every default
 and the compatibility checklist — lives in
-[managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md).
+[managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md).
 
 ### The basics
 
@@ -465,7 +465,7 @@ module "alloydb" {
 ```
 
 A worked example lives in
-[terraform/examples/02-prod-ha](../../terraform/examples/02-prod-ha).
+[terraform/examples/02-prod-ha](../terraform/examples/02-prod-ha).
 
 Underneath, the module writes the `connection_pool_config` block on
 `google_alloydb_instance`, which is available in the GA provider. The flag-naming
@@ -656,7 +656,7 @@ undersized-instance symptom in
 You also pay in CPU. Past a few hundred active backends, you lose more to context
 switching and lock contention than you gain in concurrency, which is the curve drawn
 in
-[app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md#the-one-formula-you-need).
+[app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md#the-one-formula-you-need).
 
 ### Google's own guidance is to pool
 
@@ -667,7 +667,7 @@ self-managed proxies as options. On AlloyDB you get the proxy layer without owni
 pattern in this repository is a bounded application-side pool in front of the managed
 pooler. PgBouncer and pgpool-II remain self-managed alternatives, but we do not
 recommend them here — the reasoning is set out in
-[managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md#why-not-run-your-own-pooler).
+[managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md#why-not-run-your-own-pooler).
 
 ### When raising it *is* correct
 
@@ -786,11 +786,11 @@ recommendations.**
 ## Where to go next
 
 - **Choosing a shape from scratch** → [sizing-guide.md](./sizing-guide.md)
-- **Application pool settings per language** → [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md)
-- **Managed connection pooling in depth** → [managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md)
-- **Finding the expensive queries** → [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql)
-- **Connections, locks and blocking chains** → [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql)
-- **Vacuum, bloat and transaction ID wraparound** → [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql)
+- **Application pool settings per language** → [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md)
+- **Managed connection pooling in depth** → [managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md)
+- **Finding the expensive queries** → [01_top_queries.sql](../monitoring/sql/01_top_queries.sql)
+- **Connections, locks and blocking chains** → [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql)
+- **Vacuum, bloat and transaction ID wraparound** → [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql)
 
 ---
 

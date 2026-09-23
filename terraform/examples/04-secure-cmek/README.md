@@ -751,12 +751,12 @@ gcloud dns managed-zones list --project=YOUR_PROJECT_ID --filter='name~alloydb'
 
 Operations docs:
 
-- [`docs/04-operations/security-hardening.md`](../../../docs/04-operations/security-hardening.md) — the full control catalogue this example implements
-- [`docs/04-operations/audit-logging-and-siem.md`](../../../docs/04-operations/audit-logging-and-siem.md) — tuning `pgaudit.log`, controlling volume, and SIEM ingestion patterns
-- [`docs/04-operations/monitoring-metrics.md`](../../../docs/04-operations/monitoring-metrics.md) — metric names that actually exist, and the 0–1 fraction trap
-- [`docs/04-operations/maintenance-and-upgrades.md`](../../../docs/04-operations/maintenance-and-upgrades.md) — batching restart-requiring flag changes
-- [`docs/04-operations/troubleshooting-runbook.md`](../../../docs/04-operations/troubleshooting-runbook.md) — CMEK permission errors and PSC resolution failures
-- [`docs/04-operations/sizing-guide.md`](../../../docs/04-operations/sizing-guide.md)
+- [`docs/security-hardening.md`](../../../docs/security-hardening.md) — the full control catalogue this example implements
+- [`docs/audit-logging-and-siem.md`](../../../docs/audit-logging-and-siem.md) — tuning `pgaudit.log`, controlling volume, and SIEM ingestion patterns
+- [`docs/monitoring-metrics.md`](../../../docs/monitoring-metrics.md) — metric names that actually exist, and the 0–1 fraction trap
+- [`docs/maintenance-and-upgrades.md`](../../../docs/maintenance-and-upgrades.md) — batching restart-requiring flag changes
+- [`docs/troubleshooting-runbook.md`](../../../docs/troubleshooting-runbook.md) — CMEK permission errors and PSC resolution failures
+- [`docs/sizing-guide.md`](../../../docs/sizing-guide.md)
 
 Next examples:
 

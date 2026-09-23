@@ -135,7 +135,7 @@ variable "txid_utilization_critical" {
     0.4 is four times the level autovacuum should permit. Reaching it means
     vacuum has been blocked for a sustained period - typically by a long-running
     transaction, an orphaned prepared transaction, or an orphaned replication
-    slot. See docs/04-operations/troubleshooting-runbook.md.
+    slot. See docs/troubleshooting-runbook.md.
   EOT
   type        = number
   default     = 0.4

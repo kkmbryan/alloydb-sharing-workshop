@@ -118,7 +118,7 @@ The wait profile is the highest-value single chart in AlloyDB triage, because
 > Take a `pg_stat_activity` snapshot **before** you mitigate, not after. Once you
 > terminate the blocker or restart the pool, the evidence is gone and you will be
 > guessing in the post-incident review. Query **E** in
-> [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql),
+> [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql),
 > saved to a file with a UTC timestamp in the name, costs you ten seconds.
 
 ---
@@ -148,7 +148,7 @@ adding application instances, which makes it worse.
 ### Diagnose
 
 Run query **A** in
-[01_top_queries.sql](../../monitoring/sql/01_top_queries.sql) — top 20 queries by
+[01_top_queries.sql](../monitoring/sql/01_top_queries.sql) — top 20 queries by
 **total** execution time. Sort by total, not mean: a 5 ms query executed two million
 times costs far more CPU than a nine-second report run twice a day, and it is the one
 you can actually fix.
@@ -164,7 +164,7 @@ without a database connection, which matters when you cannot get one:
 ### Mitigate now
 
 1. **Find the single worst offender** and kill it, if there is one. Query **F** in
-   [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql).
+   [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql).
    Always try `pg_cancel_backend(pid)` first — it cancels the query and keeps the
    connection. `pg_terminate_backend(pid)` drops the connection and rolls back.
 2. **Shed load at the application**, not the database. Turn off the batch job, reduce
@@ -184,7 +184,7 @@ without a database connection, which matters when you cannot get one:
 
 - Fix or index the top query from `01_top_queries.sql` query A.
 - Cap concurrency at the application: the pool arithmetic in
-  [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md)
+  [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md)
   exists precisely to stop the database being handed more concurrency than it has
   cores.
 - Set `statement_timeout` as a default for analytical roles.
@@ -229,7 +229,7 @@ The state breakdown tells you which of three different problems you have:
 ### Diagnose
 
 In order, from
-[02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql):
+[02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql):
 
 - **Query A** — the connection budget. Gives `used_pct` and the state breakdown in one
   row. This is your first query.
@@ -266,7 +266,7 @@ In order, from
 ### Durable fix
 
 - Do the capacity arithmetic in
-  [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md).
+  [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md).
   The two traps it names — sizing for current replicas instead of `maxReplicas`, and
   forgetting that rolling deploys double the instance count — cause most of these
   incidents.
@@ -275,7 +275,7 @@ In order, from
   direct connections stay on 5432. It is configured through
   `connection_pool_config` on `google_alloydb_instance` (`enabled` is required).
   See
-  [managed-connection-pooling.md](../../config/connection-pooling/managed-connection-pooling.md)
+  [managed-connection-pooling.md](../config/connection-pooling/managed-connection-pooling.md)
   for the pool modes, the transaction-mode compatibility list, and the four
   `database/conn_pool/*` metrics you should be watching.
 - Set `idle_in_transaction_session_timeout` — **no restart required**. This converts an
@@ -317,7 +317,7 @@ specific parameter value hitting a bad plan — not a capacity problem.
 
 ### Diagnose
 
-From [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql):
+From [01_top_queries.sql](../monitoring/sql/01_top_queries.sql):
 
 - **Query C** — highest `stddev_exec_time`. This is the plan-flip detector. Unstable
   execution time on a query with stable input is the signature of parameter sniffing or
@@ -366,7 +366,7 @@ If you need plans captured automatically for queries you cannot reproduce, that 
 - Fix the query or add the index. Validate with the index advisor
   (`google_db_advisor.enabled`, **restart required**) rather than guessing.
 - Drop unused indexes — query **G** in
-  [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql). They cost
+  [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql). They cost
   write throughput, storage and vacuum time. Check a read pool's stats too before
   dropping: an index used only by a monthly report looks unused on any given day.
 - Set `log_min_duration_statement` (no restart) so slow queries are logged before
@@ -398,7 +398,7 @@ are queued.
 
 ### Diagnose
 
-From [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql):
+From [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql):
 
 - **Query C** — current wait events. Confirms `Lock` dominates.
 - **Query D** — the blocking tree. This is the one that matters. It gives you
@@ -511,7 +511,7 @@ ORDER BY query_start;
 ```
 
 Also run query **C** in
-[03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql) on the primary.
+[03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql) on the primary.
 Its C2 subquery finds inactive replication slots, which retain WAL indefinitely and can
 turn a transient lag into an unbounded one.
 
@@ -575,7 +575,7 @@ gcloud monitoring time-series list \
 
 The question is always "what grew, and is it real data or is it garbage?".
 
-From [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql):
+From [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql):
 
 - **Query F** — table and index sizes with a bloat estimate. Start here.
 - **Query D** — dead tuple accumulation. A large `dead_pct` means storage is being
@@ -667,7 +667,7 @@ The `type` label on `oldest_transaction_age` takes the values `running`, `prepar
 These are our starting points, not Google recommendations — Google publishes no
 numeric alerting thresholds for AlloyDB. They are implemented as
 `txid_utilization_warning` and `txid_utilization_critical` in
-[terraform/modules/observability/variables.tf](../../terraform/modules/observability/variables.tf).
+[terraform/modules/observability/variables.tf](../terraform/modules/observability/variables.tf).
 
 | Tier | Value | Reasoning |
 | --- | --- | --- |
@@ -708,7 +708,7 @@ gcloud logging read \
 Source: [Configure adaptive autovacuum](https://cloud.google.com/alloydb/docs/adaptive-autovacuum).
 
 Then confirm and quantify with
-[03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql):
+[03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql):
 
 - **Query A** — per-database XID age and `pct_to_wraparound` against the 2,147,483,647
   hard limit. This is the in-database ground truth that the metric reflects, and the
@@ -751,7 +751,7 @@ Work through C1, C2, C3 in order — they map one-to-one onto the `type` label:
 ### Durable fix
 
 - **Alert on `transaction_id_utilization`.** This is implemented as `txid_wraparound`
-  in [terraform/modules/observability/main.tf](../../terraform/modules/observability/main.tf)
+  in [terraform/modules/observability/main.tf](../terraform/modules/observability/main.tf)
   with the two-tier warning/critical structure described above. Wraparound gives you
   weeks of warning if the alert is armed, and none if it is not.
 - **Alert or report on the adaptive autovacuum log warnings too.** A log-based metric
@@ -840,7 +840,7 @@ Work through the possibilities in order of likelihood:
 
 - Reconnection, retry and backoff with jitter. This is the single highest-value
   investment and it is specified per language in
-  [app-side-pool-sizing.md](../../config/connection-pooling/app-side-pool-sizing.md).
+  [app-side-pool-sizing.md](../config/connection-pooling/app-side-pool-sizing.md).
 - Enable HA on every production instance.
 - **Test failover on a schedule**, in non-production, using
   `gcloud alloydb instances failover` or `gcloud alloydb instances inject-fault`. An
@@ -1033,11 +1033,11 @@ artefact and the one that is impossible to reconstruct afterwards.
 Plus, as text output you can attach:
 
 - Query **A** and **E** from
-  [02_connections_and_locks.sql](../../monitoring/sql/02_connections_and_locks.sql)
+  [02_connections_and_locks.sql](../monitoring/sql/02_connections_and_locks.sql)
 - Query **D** from the same file if any locking is involved
-- Query **A** from [01_top_queries.sql](../../monitoring/sql/01_top_queries.sql)
+- Query **A** from [01_top_queries.sql](../monitoring/sql/01_top_queries.sql)
 - Query **A** from
-  [03_vacuum_and_bloat.sql](../../monitoring/sql/03_vacuum_and_bloat.sql) for anything
+  [03_vacuum_and_bloat.sql](../monitoring/sql/03_vacuum_and_bloat.sql) for anything
   vacuum-related
 
 ### Impact statement

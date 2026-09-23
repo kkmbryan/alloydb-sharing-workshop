@@ -8,7 +8,7 @@
 **Companion document:** [audit-logging-and-siem.md](./audit-logging-and-siem.md)
 covers proving *who did what*. This document covers *stopping them doing it*.
 
-**Reference implementation:** [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
+**Reference implementation:** [`terraform/examples/04-secure-cmek/`](../terraform/examples/04-secure-cmek/)
 
 ---
 
@@ -91,7 +91,7 @@ review, PSC offers structural security advantages that make it the superior ente
    over PSC and is blocked on public IP.
 
 *(For a detailed comparison of PSA versus PSC operational trade-offs, see
-[`terraform/examples/README.md`](../../terraform/examples/README.md).)*
+[`terraform/examples/README.md`](../terraform/examples/README.md).)*
 
 ### Private Services Access vs Private Service Connect
 
@@ -145,7 +145,7 @@ two objects that PSA would have given you for nothing:
    until the DNS record exists**.
 
 In Terraform, the consumer-side endpoint and DNS logic are encapsulated in this repository's
-reusable [`terraform/modules/psc-endpoint/`](../../terraform/modules/psc-endpoint/) module.
+reusable [`terraform/modules/psc-endpoint/`](../terraform/modules/psc-endpoint/) module.
 
 ```bash
 # 1. Read the service attachment for the instance you want to reach.
@@ -368,7 +368,7 @@ also a security decision, and it is worth making deliberately rather than by
 default. Our recommendation is to use **AlloyDB Managed Connection Pooling
 (MCP)**, the pooler built into the service, rather than deploying and operating
 your own. The configuration detail lives in
-[`config/connection-pooling/managed-connection-pooling.md`](../../config/connection-pooling/managed-connection-pooling.md);
+[`config/connection-pooling/managed-connection-pooling.md`](../config/connection-pooling/managed-connection-pooling.md);
 what follows is the security-relevant part of the argument.
 
 ### It reinforces private-only networking
@@ -507,7 +507,7 @@ One more constraint that catches people running cross-region DR: for the primary
 instance in a **Private Service Connect** cluster, connector enforcement is only
 supported when there are **no secondary instances**. Because every example here
 uses PSC, that lands directly on
-[`terraform/examples/05-cross-region-dr/`](../../terraform/examples/05-cross-region-dr/):
+[`terraform/examples/05-cross-region-dr/`](../terraform/examples/05-cross-region-dr/):
 once a secondary exists, `require_connectors` is currently off the table for the
 primary. Verify this against the docs before you design around it, because it is
 the kind of limitation that gets lifted.
@@ -799,7 +799,7 @@ Two further limits worth knowing:
   and failed attempts. Google does not publish the number. A connection pool
   that reconnects aggressively can exhaust it and cause a self-inflicted
   availability incident — another argument for pooling, and specifically for
-  [managed connection pooling](../../config/connection-pooling/managed-connection-pooling.md).
+  [managed connection pooling](../config/connection-pooling/managed-connection-pooling.md).
 
 IAM **group** authentication (Preview at time of writing) adds Cloud Identity
 group membership as the grant mechanism. Constraints to plan around: PostgreSQL
@@ -997,7 +997,7 @@ ORDER  BY 1, 2;
 ```
 
 Query 4 belongs in your recurring compliance scan. Run it alongside the checks
-in [`monitoring/sql/`](../../monitoring/sql/).
+in [`monitoring/sql/`](../monitoring/sql/).
 
 ### Foreign data wrappers and outbound reach
 
@@ -1213,25 +1213,25 @@ SHOW pgaudit.log;
 
 - [audit-logging-and-siem.md](./audit-logging-and-siem.md) — proving coverage:
   Cloud Audit Logs, pgAudit, server logs, and SIEM export
-- [`terraform/examples/04-secure-cmek/`](../../terraform/examples/04-secure-cmek/)
+- [`terraform/examples/04-secure-cmek/`](../terraform/examples/04-secure-cmek/)
   — the reference implementation of this baseline
-- [`terraform/examples/02-prod-ha/`](../../terraform/examples/02-prod-ha/) —
+- [`terraform/examples/02-prod-ha/`](../terraform/examples/02-prod-ha/) —
   production HA topology this baseline is normally applied to
-- [`terraform/examples/README.md`](../../terraform/examples/README.md) — why
+- [`terraform/examples/README.md`](../terraform/examples/README.md) — why
   every example standardises on Private Service Connect, and the operational
   work that comes with it
-- [`terraform/modules/psc-endpoint/`](../../terraform/modules/psc-endpoint/) —
+- [`terraform/modules/psc-endpoint/`](../terraform/modules/psc-endpoint/) —
   the consumer-side endpoint and DNS record, written once rather than per example
 - [maintenance-and-upgrades.md](./maintenance-and-upgrades.md) — restart-inducing
   flag changes (`alloydb.enable_pgaudit`) belong in a maintenance window
 - [monitoring-metrics.md](./monitoring-metrics.md) — metric names and the
   0–1 fraction trap for percentage-unit thresholds
-- [`config/connection-pooling/managed-connection-pooling.md`](../../config/connection-pooling/managed-connection-pooling.md)
+- [`config/connection-pooling/managed-connection-pooling.md`](../config/connection-pooling/managed-connection-pooling.md)
   — the recommended pooling approach, and why it reinforces private-only
   networking and preserves pgAudit attribution
-- [`config/connection-pooling/app-side-pool-sizing.md`](../../config/connection-pooling/app-side-pool-sizing.md)
+- [`config/connection-pooling/app-side-pool-sizing.md`](../config/connection-pooling/app-side-pool-sizing.md)
   — relevant here because connection churn interacts with the IAM sign-in quota
-- [`monitoring/sql/02_connections_and_locks.sql`](../../monitoring/sql/02_connections_and_locks.sql)
+- [`monitoring/sql/02_connections_and_locks.sql`](../monitoring/sql/02_connections_and_locks.sql)
   — who is connected right now, and as whom
 
 ---

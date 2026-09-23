@@ -417,7 +417,7 @@ One more trap, verified empirically against a live instance: metrics carrying th
 1** from the API, even though the console renders a percentage and some metric
 descriptions say "from 0 to 100". In Terraform you write `0.85`, not `85`. Writing `85`
 produces a policy that validates cleanly and never fires. See
-[`docs/04-operations/monitoring-metrics.md`](../../../docs/04-operations/monitoring-metrics.md).
+[`docs/monitoring-metrics.md`](../../../docs/monitoring-metrics.md).
 
 ### Why `deletion_protection = true` with `deletion_policy = "DEFAULT"`
 
@@ -624,12 +624,12 @@ on it, re-enable it.
 
 Operations docs:
 
-- [`docs/04-operations/security-hardening.md`](../../../docs/04-operations/security-hardening.md) — the full control set, including what this example stops short of
-- [`docs/04-operations/audit-logging-and-siem.md`](../../../docs/04-operations/audit-logging-and-siem.md) — widening `pgaudit.log` safely, and getting records to a SIEM
-- [`docs/04-operations/monitoring-metrics.md`](../../../docs/04-operations/monitoring-metrics.md) — which metrics exist, and the 0–1 fraction trap
-- [`docs/04-operations/sizing-guide.md`](../../../docs/04-operations/sizing-guide.md) — choosing `cpu_count` and the 2× quota maths
-- [`docs/04-operations/maintenance-and-upgrades.md`](../../../docs/04-operations/maintenance-and-upgrades.md) — what happens in that Sunday window
-- [`docs/04-operations/troubleshooting-runbook.md`](../../../docs/04-operations/troubleshooting-runbook.md)
+- [`docs/security-hardening.md`](../../../docs/security-hardening.md) — the full control set, including what this example stops short of
+- [`docs/audit-logging-and-siem.md`](../../../docs/audit-logging-and-siem.md) — widening `pgaudit.log` safely, and getting records to a SIEM
+- [`docs/monitoring-metrics.md`](../../../docs/monitoring-metrics.md) — which metrics exist, and the 0–1 fraction trap
+- [`docs/sizing-guide.md`](../../../docs/sizing-guide.md) — choosing `cpu_count` and the 2× quota maths
+- [`docs/maintenance-and-upgrades.md`](../../../docs/maintenance-and-upgrades.md) — what happens in that Sunday window
+- [`docs/troubleshooting-runbook.md`](../../../docs/troubleshooting-runbook.md)
 
 Related configuration:
 
