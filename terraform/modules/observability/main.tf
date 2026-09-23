@@ -330,14 +330,14 @@ resource "google_monitoring_alert_policy" "storage_quota" {
     condition_threshold {
       filter = <<-EOT
         metric.type = "alloydb.googleapis.com/quota/storage_usage_per_cluster/usage" AND
-        resource.type = "alloydb.googleapis.com/Cluster" AND
-        resource.labels.cluster_id = "${var.cluster_id}"
+        resource.type = "alloydb.googleapis.com/Location" AND
+        metric.label.cluster = "${var.cluster_id}"
       EOT
 
       denominator_filter = <<-EOT
         metric.type = "alloydb.googleapis.com/quota/storage_usage_per_cluster/limit" AND
-        resource.type = "alloydb.googleapis.com/Cluster" AND
-        resource.labels.cluster_id = "${var.cluster_id}"
+        resource.type = "alloydb.googleapis.com/Location" AND
+        metric.label.cluster = "${var.cluster_id}"
       EOT
 
       comparison      = "COMPARISON_GT"
@@ -521,19 +521,10 @@ resource "google_monitoring_alert_policy" "backup_stale" {
   conditions {
     display_name = "Newest backup older than threshold"
 
-    condition_monitoring_query_language {
-      # MQL is used here because we need arithmetic against the current time,
-      # which a plain threshold condition cannot express.
-      query = <<-EOT
-        fetch alloydb.googleapis.com/Cluster
-        | metric 'alloydb.googleapis.com/cluster/last_backup_timestamp'
-        | filter resource.cluster_id == '${var.cluster_id}'
-        | group_by [], [latest_backup_us: max(value.last_backup_timestamp)]
-        | every 30m
-        | condition latest_backup_us < (end() - ${var.backup_max_age_hours}h)
-      EOT
-
-      duration = "1800s"
+    condition_prometheus_query_language {
+      query                     = "time() - (max(alloydb_googleapis_com:cluster_last_backup_timestamp{resource_cluster_id=\"${var.cluster_id}\"}) / 1000000) > ${var.backup_max_age_hours * 3600}"
+      duration                  = "1800s"
+      disable_metric_validation = true
     }
   }
 

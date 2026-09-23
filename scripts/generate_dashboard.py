@@ -26,9 +26,12 @@ CLUSTER_VAR = "${cluster_id}"
 
 INSTANCE = 'resource.type="alloydb.googleapis.com/Instance"'
 CLUSTER = 'resource.type="alloydb.googleapis.com/Cluster"'
+LOCATION = 'resource.type="alloydb.googleapis.com/Location"'
 
 
 def cluster_filter(resource: str, cluster: str) -> str:
+    if "Location" in resource:
+        return f'{resource} metric.label.cluster="{cluster}"'
     return f'{resource} resource.labels.cluster_id="{cluster}"'
 
 
@@ -119,7 +122,7 @@ def build(cluster=CLUSTER_VAR, display_name="AlloyDB Overview"):
             reducer="REDUCE_MAX",
             group_by=["resource.label.instance_id"],
             axis_label="fraction (0-1)",
-            thresholds=[{"value": 0.85, "color": "YELLOW", "direction": "ABOVE"}],
+            thresholds=[{"label": "Warning", "value": 0.85}],
         ),
         xy(
             "CPU utilisation (average across nodes)",
@@ -133,7 +136,7 @@ def build(cluster=CLUSTER_VAR, display_name="AlloyDB Overview"):
             metric("instance/postgres/total_connections", cluster=cluster),
             metric("instance/postgres/connections_limit", cluster=cluster),
             axis_label="fraction (0-1)",
-            thresholds=[{"value": 0.8, "color": "YELLOW", "direction": "ABOVE"}],
+            thresholds=[{"label": "Warning", "value": 0.8}],
         ),
         xy(
             "Connections by state",
@@ -204,8 +207,8 @@ def build(cluster=CLUSTER_VAR, display_name="AlloyDB Overview"):
             aligner="ALIGN_MAX",
             axis_label="fraction (0-1)",
             thresholds=[
-                {"value": 0.5, "color": "YELLOW", "direction": "ABOVE"},
-                {"value": 0.8, "color": "RED", "direction": "ABOVE"},
+                {"label": "Warning", "value": 0.2},
+                {"label": "Critical", "value": 0.4},
             ],
         ),
         xy(
@@ -233,10 +236,10 @@ def build(cluster=CLUSTER_VAR, display_name="AlloyDB Overview"):
         # ---- Storage ----
         ratio(
             "Storage quota utilisation",
-            metric("quota/storage_usage_per_cluster/usage", resource=CLUSTER, cluster=cluster),
-            metric("quota/storage_usage_per_cluster/limit", resource=CLUSTER, cluster=cluster),
+            metric("quota/storage_usage_per_cluster/usage", resource=LOCATION, cluster=cluster),
+            metric("quota/storage_usage_per_cluster/limit", resource=LOCATION, cluster=cluster),
             axis_label="fraction (0-1)",
-            thresholds=[{"value": 0.8, "color": "YELLOW", "direction": "ABOVE"}],
+            thresholds=[{"label": "Warning", "value": 0.8}],
         ),
         xy(
             "Cluster storage used",

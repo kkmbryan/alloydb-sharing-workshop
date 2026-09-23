@@ -52,9 +52,8 @@
             },
             "thresholds": [
               {
-                "value": 0.85,
-                "color": "YELLOW",
-                "direction": "ABOVE"
+                "label": "Warning",
+                "value": 0.85
               }
             ]
           }
@@ -138,9 +137,8 @@
             },
             "thresholds": [
               {
-                "value": 0.8,
-                "color": "YELLOW",
-                "direction": "ABOVE"
+                "label": "Warning",
+                "value": 0.8
               }
             ]
           }
@@ -457,14 +455,12 @@
             },
             "thresholds": [
               {
-                "value": 0.5,
-                "color": "YELLOW",
-                "direction": "ABOVE"
+                "label": "Warning",
+                "value": 0.2
               },
               {
-                "value": 0.8,
-                "color": "RED",
-                "direction": "ABOVE"
+                "label": "Critical",
+                "value": 0.4
               }
             ]
           }
@@ -592,14 +588,14 @@
                 "timeSeriesQuery": {
                   "timeSeriesFilterRatio": {
                     "numerator": {
-                      "filter": "metric.type=\"alloydb.googleapis.com/quota/storage_usage_per_cluster/usage\" resource.type=\"alloydb.googleapis.com/Cluster\" resource.labels.cluster_id=\"REPLACE_WITH_YOUR_CLUSTER_ID\"",
+                      "filter": "metric.type=\"alloydb.googleapis.com/quota/storage_usage_per_cluster/usage\" resource.type=\"alloydb.googleapis.com/Location\" metric.label.cluster=\"REPLACE_WITH_YOUR_CLUSTER_ID\"",
                       "aggregation": {
                         "alignmentPeriod": "60s",
                         "perSeriesAligner": "ALIGN_MEAN"
                       }
                     },
                     "denominator": {
-                      "filter": "metric.type=\"alloydb.googleapis.com/quota/storage_usage_per_cluster/limit\" resource.type=\"alloydb.googleapis.com/Cluster\" resource.labels.cluster_id=\"REPLACE_WITH_YOUR_CLUSTER_ID\"",
+                      "filter": "metric.type=\"alloydb.googleapis.com/quota/storage_usage_per_cluster/limit\" resource.type=\"alloydb.googleapis.com/Location\" metric.label.cluster=\"REPLACE_WITH_YOUR_CLUSTER_ID\"",
                       "aggregation": {
                         "alignmentPeriod": "60s",
                         "perSeriesAligner": "ALIGN_MEAN"
@@ -615,9 +611,8 @@
             },
             "thresholds": [
               {
-                "value": 0.8,
-                "color": "YELLOW",
-                "direction": "ABOVE"
+                "label": "Warning",
+                "value": 0.8
               }
             ]
           }
