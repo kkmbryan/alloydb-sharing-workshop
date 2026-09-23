@@ -65,21 +65,15 @@ resource "google_compute_forwarding_rule" "psc" {
 # wherever your DNS is actually managed.
 # ---------------------------------------------------------------------------
 locals {
-  # The advertised name is fully qualified with a trailing dot. The managed
-  # zone covers everything after the first label, so that one zone can hold
-  # records for several instances in the same region.
-  zone_dns_name = var.dns_name == null ? null : join(
-    ".",
-    slice(
-      split(".", var.dns_name),
-      1,
-      length(split(".", var.dns_name))
-    )
-  )
+  # The advertised name is fully qualified with a trailing dot:
+  #   "<uid>.<region>.alloydb-psc.goog."
+  # The managed zone covers "<region>.alloydb-psc.goog." so that one zone
+  # can hold records for several instances in the same region.
+  zone_dns_name = "${var.region}.alloydb-psc.goog."
 }
 
 resource "google_dns_managed_zone" "psc" {
-  count = var.create_dns && var.dns_name != null ? 1 : 0
+  count = var.create_dns ? 1 : 0
 
   name     = var.name
   project  = var.project_id
@@ -99,7 +93,7 @@ resource "google_dns_managed_zone" "psc" {
 }
 
 resource "google_dns_record_set" "psc" {
-  count = var.create_dns && var.dns_name != null ? 1 : 0
+  count = var.create_dns ? 1 : 0
 
   project      = var.project_id
   managed_zone = google_dns_managed_zone.psc[0].name
@@ -115,7 +109,7 @@ resource "google_dns_record_set" "psc" {
 # time: asking for DNS without supplying the name to create it for.
 check "dns_inputs_consistent" {
   assert {
-    condition     = !var.create_dns || var.dns_name != null
+    condition     = var.create_dns ? var.dns_name != null : true
     error_message = "create_dns is true but dns_name is null. Pass the alloydb-cluster module's psc_dns_name output, which is only populated when the cluster was created with psc_enabled = true."
   }
 }

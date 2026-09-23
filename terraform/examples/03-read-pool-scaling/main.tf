@@ -165,7 +165,7 @@ module "psc_endpoint_read_pool" {
 
   project_id = var.project_id
   region     = var.region
-  name       = "${var.name_prefix}-readscale-${each.key}-psc"
+  name       = "${each.key}-psc"
 
   network_self_link = module.network.network_self_link
   subnet_self_link  = module.network.subnet_self_link

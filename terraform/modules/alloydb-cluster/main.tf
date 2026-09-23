@@ -16,7 +16,7 @@ locals {
   primary_instance_id = coalesce(var.primary_instance_id, "${var.cluster_id}-primary")
 
   # Backups inherit the cluster key unless a dedicated backup key is supplied.
-  effective_backup_kms_key = coalesce(var.backup_kms_key_name, var.kms_key_name, "")
+  effective_backup_kms_key = var.backup_kms_key_name != null ? var.backup_kms_key_name : var.kms_key_name
 
   is_secondary = var.cluster_type == "SECONDARY"
 
@@ -121,7 +121,7 @@ resource "google_alloydb_cluster" "this" {
       }
 
       dynamic "encryption_config" {
-        for_each = local.effective_backup_kms_key == "" ? [] : [1]
+        for_each = local.effective_backup_kms_key == null ? [] : [1]
         content {
           kms_key_name = local.effective_backup_kms_key
         }
@@ -137,7 +137,7 @@ resource "google_alloydb_cluster" "this" {
       recovery_window_days = var.continuous_backup_recovery_window_days
 
       dynamic "encryption_config" {
-        for_each = local.effective_backup_kms_key == "" ? [] : [1]
+        for_each = local.effective_backup_kms_key == null ? [] : [1]
         content {
           kms_key_name = local.effective_backup_kms_key
         }
